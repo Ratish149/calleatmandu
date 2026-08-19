@@ -13,7 +13,7 @@ from order.services.order_service import OrderService
 class OrderListCreateAPIView(ListCreateAPIView):
     queryset = Order.objects.select_related(
         "branch", "user", "offer", "promo_code"
-    ).prefetch_related("items__product")
+    ).prefetch_related("items__product", "items__selected_extras")
     serializer_class = OrderSerializer
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend]
@@ -42,6 +42,7 @@ class OrderListCreateAPIView(ListCreateAPIView):
 class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Order.objects.select_related(
         "branch", "user", "offer", "promo_code"
-    ).prefetch_related("items__product")
+    ).prefetch_related("items__product", "items__selected_extras")
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    lookup_field = "order_number"

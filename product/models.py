@@ -54,6 +54,25 @@ class Product(BaseModel):
         super().save(*args, **kwargs)
 
 
+class ProductExtra(BaseModel):
+    """
+    An optional add-on for a product.
+    E.g. "Extra Cheese", "Crispy Fries", "Garlic Sauce"
+    """
+
+    product = models.ForeignKey(
+        "Product", on_delete=models.CASCADE, related_name="extras"
+    )
+    name = models.CharField(max_length=100)           # e.g. "Extra Cheese"
+    additional_price = models.FloatField(default=0.0) # surcharge on top of base price
+
+    class Meta:
+        ordering = ["additional_price", "name"]
+
+    def __str__(self):
+        return f"{self.product.name} › {self.name} (+{self.additional_price})"
+
+
 class ProductImage(BaseModel):
     product = models.ForeignKey(
         "Product", on_delete=models.CASCADE, related_name="images"

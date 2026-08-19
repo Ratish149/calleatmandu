@@ -1,15 +1,40 @@
 from rest_framework import serializers
 
-from order.models import Order, OrderItem
+from order.models import Order, OrderItem, OrderItemExtra
+
+# ---------------------------------------------------------------------------
+# Extras
+# ---------------------------------------------------------------------------
+
+
+class OrderItemExtraCreateSerializer(serializers.Serializer):
+    """Used when submitting an order — reference the extra by its id."""
+
+    extra_id = serializers.IntegerField()
+
+
+class OrderItemExtraSerializer(serializers.ModelSerializer):
+    """Read-only representation of a selected extra on an order item."""
+
+    class Meta:
+        model = OrderItemExtra
+        fields = ["id", "extra", "extra_name", "additional_price"]
+
+
+# ---------------------------------------------------------------------------
+# Order Item
+# ---------------------------------------------------------------------------
 
 
 class OrderItemCreateSerializer(serializers.Serializer):
     product_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1)
+    extras = OrderItemExtraCreateSerializer(many=True, required=False, default=list)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
+    selected_extras = OrderItemExtraSerializer(many=True, read_only=True)
 
     class Meta:
         model = OrderItem
@@ -19,8 +44,15 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product_name",
             "quantity",
             "unit_price",
+            "extras_price",
             "subtotal",
+            "selected_extras",
         ]
+
+
+# ---------------------------------------------------------------------------
+# Order
+# ---------------------------------------------------------------------------
 
 
 class OrderCreateSerializer(serializers.Serializer):
@@ -30,7 +62,9 @@ class OrderCreateSerializer(serializers.Serializer):
     latitude = serializers.FloatField()
     longitude = serializers.FloatField()
     special_note = serializers.CharField(required=False, allow_blank=True)
-    promo_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    promo_code = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
     items = OrderItemCreateSerializer(many=True, min_length=1)
 
 
@@ -42,6 +76,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             "id",
+            "order_number",
             "user",
             "branch",
             "branch_name",
@@ -64,6 +99,7 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "order_number",
             "user",
             "branch",
             "subtotal",

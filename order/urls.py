@@ -8,7 +8,7 @@ from order.views import (
 urlpatterns = [
     path("orders/", OrderListCreateAPIView.as_view(), name="order-list-create"),
     path(
-        "orders/<int:pk>/",
+        "orders/<str:order_number>/",
         OrderRetrieveUpdateDestroyAPIView.as_view(),
         name="order-detail",
     ),
