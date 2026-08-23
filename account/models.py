@@ -13,8 +13,10 @@ class User(AbstractUser):
         ("reception", "Reception"),
         ("rider", "Rider"),
         ("kitchen", "Kitchen"),
+        ("customer", "Customer"),
     )
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="customer")
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
     branch = models.ForeignKey(
         "Branch",
         on_delete=models.SET_NULL,
@@ -22,6 +24,11 @@ class User(AbstractUser):
         blank=True,
         related_name="users",
     )
+
+    class Meta:
+        db_table = "account_user"
+        verbose_name = "user"
+        verbose_name_plural = "users"
 
 
 class Branch(BaseModel):
@@ -36,6 +43,9 @@ class Branch(BaseModel):
     image = models.FileField(upload_to="branch_images/", blank=True, null=True)
     opening_time = models.TimeField(null=True, blank=True)
     closing_time = models.TimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "account_branch"
 
     def __str__(self):
         return self.name

@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('account', '0004_branch_slug'),
+        ('user_account', '0004_branch_slug'),
         ('offer', '0001_initial'),
         ('product', '0003_subcategory_product_sub_category'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                 ('delivery_fee', models.FloatField(default=0.0)),
                 ('total_amount', models.FloatField(default=0.0)),
                 ('status', models.CharField(choices=[('PENDING', 'Pending'), ('CONFIRMED', 'Confirmed'), ('PREPARING', 'Preparing'), ('OUT_FOR_DELIVERY', 'Out for Delivery'), ('DELIVERED', 'Delivered'), ('CANCELLED', 'Cancelled')], db_index=True, default='PENDING', max_length=30)),
-                ('branch', models.ForeignKey(blank=True, help_text='Nearest branch assigned to fulfill this order.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to='account.branch')),
+                ('branch', models.ForeignKey(blank=True, help_text='Nearest branch assigned to fulfill this order.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to='user_account.branch')),
                 ('offer', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to='offer.offer')),
                 ('promo_code', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to='offer.promocode')),
                 ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to=settings.AUTH_USER_MODEL)),

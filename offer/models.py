@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from common.models import BaseModel
@@ -13,7 +14,9 @@ class PromoCode(BaseModel):
         help_text="The offer linked to this promo code.",
     )
     max_total_usage = models.PositiveIntegerField(
-        null=True, blank=True, help_text="Maximum times this promo code can be used in total"
+        null=True,
+        blank=True,
+        help_text="Maximum times this promo code can be used in total",
     )
     max_usage_per_user = models.PositiveIntegerField(
         default=1, help_text="Maximum times a single user can use this promo code"
@@ -50,11 +53,7 @@ class Offer(BaseModel):
     # Basic Info
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    banner_image = models.FileField(
-        upload_to="offers/banners/", blank=True, null=True
-    )
-
-
+    banner_image = models.FileField(upload_to="offers/banners/", blank=True, null=True)
 
     # Core Offer Type & Scope
     offer_type = models.CharField(
@@ -132,7 +131,9 @@ class Offer(BaseModel):
 
     # Usage & Limits (for auto-applied offers without a promo code)
     max_total_usage = models.PositiveIntegerField(
-        null=True, blank=True, help_text="Total overall uses available for auto-applied offer"
+        null=True,
+        blank=True,
+        help_text="Total overall uses available for auto-applied offer",
     )
     max_usage_per_user = models.PositiveIntegerField(
         default=1, help_text="Max times a single user can redeem auto-applied offer"
@@ -175,7 +176,9 @@ class OfferRedemption(BaseModel):
         help_text="The specific promo code redeemed, if applicable.",
     )
     user = models.ForeignKey(
-        "account.User", on_delete=models.CASCADE, related_name="offer_redemptions"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="offer_redemptions",
     )
     order_id = models.CharField(max_length=100, null=True, blank=True)
     discount_applied = models.FloatField(default=0.0)

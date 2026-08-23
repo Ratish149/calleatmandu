@@ -1,5 +1,6 @@
 import random
 
+from django.conf import settings
 from django.db import models
 
 from common.models import BaseModel
@@ -23,20 +24,21 @@ class Order(BaseModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     user = models.ForeignKey(
-        "account.User",
-        on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="orders",
         null=True,
         blank=True,
-        related_name="orders",
     )
     branch = models.ForeignKey(
-        "account.Branch",
+        "user_account.Branch",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="orders",
         help_text="Nearest branch assigned to fulfill this order.",
     )
+
 
     # Customer Details
     customer_name = models.CharField(max_length=150)

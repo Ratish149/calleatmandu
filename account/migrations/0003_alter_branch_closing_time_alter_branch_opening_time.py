@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("account", "0002_branch_alter_user_role_user_branch"),
+        ("user_account", "0002_branch_alter_user_role_user_branch"),
     ]
 
     operations = [

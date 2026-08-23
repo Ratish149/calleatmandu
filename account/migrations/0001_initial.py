@@ -132,6 +132,7 @@ class Migration(migrations.Migration):
                 ),
             ],
             options={
+                "db_table": "account_user",
                 "verbose_name": "user",
                 "verbose_name_plural": "users",
                 "abstract": False,

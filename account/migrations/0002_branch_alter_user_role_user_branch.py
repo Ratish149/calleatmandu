@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("account", "0001_initial"),
+        ("user_account", "0001_initial"),
     ]
 
     operations = [
@@ -36,6 +36,9 @@ class Migration(migrations.Migration):
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
+            options={
+                "db_table": "account_branch",
+            },
         ),
         migrations.AlterField(
             model_name="user",
@@ -58,7 +61,7 @@ class Migration(migrations.Migration):
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
                 related_name="users",
-                to="account.branch",
+                to="user_account.branch",
             ),
         ),
     ]
