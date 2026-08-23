@@ -5,6 +5,8 @@ from product.views import (
     CategoryRetrieveUpdateDestroyAPIView,
     ProductExtraListCreateAPIView,
     ProductExtraRetrieveUpdateDestroyAPIView,
+    ProductImageListCreateAPIView,
+    ProductImageRetrieveUpdateDestroyAPIView,
     ProductListCreateAPIView,
     ProductRetrieveUpdateDestroyAPIView,
     SubcategoryListCreateAPIView,
@@ -27,4 +29,9 @@ urlpatterns = [
     # Product Extras  (nested under product slug)
     path("products/<slug:product_slug>/extras/", ProductExtraListCreateAPIView.as_view(), name="product-extra-list-create"),
     path("products/<slug:product_slug>/extras/<int:pk>/", ProductExtraRetrieveUpdateDestroyAPIView.as_view(), name="product-extra-detail"),
+
+    # Product Images  (nested under product slug)
+    path("products/<slug:product_slug>/images/", ProductImageListCreateAPIView.as_view(), name="product-image-list-create"),
+    path("products/<slug:product_slug>/images/<int:pk>/", ProductImageRetrieveUpdateDestroyAPIView.as_view(), name="product-image-detail"),
 ]
+

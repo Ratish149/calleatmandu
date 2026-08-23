@@ -9,12 +9,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from product.filters import ProductFilter
-from product.models import Category, Product, ProductExtra, Subcategory
+from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
 from product.serializers import (
     CategorySerializer,
     ProductCreateSerializer,
     ProductDetailSerializer,
     ProductExtraCreateSerializer,
+    ProductImageCreateSerializer,
     ProductListSerializer,
     SubcategorySerializer,
 )
@@ -66,7 +67,7 @@ class ProductListCreateAPIView(ListCreateAPIView):
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter
-    search_fields = ["name"]
+    search_fields = ["name", "description"]
 
     def create(self, request, *args, **kwargs):
         serializer = ProductCreateSerializer(data=request.data)
@@ -86,6 +87,22 @@ class ProductRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     serializer_class = ProductDetailSerializer
     permission_classes = [AllowAny]
     lookup_field = "slug"
+
+    def get_serializer_class(self):
+        if self.request.method in ["PUT", "PATCH"]:
+            return ProductCreateSerializer
+        return ProductDetailSerializer
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = ProductCreateSerializer(
+            instance, data=request.data, partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+        response_serializer = ProductDetailSerializer(product)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -123,3 +140,41 @@ class ProductExtraRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return ProductExtra.objects.filter(product__slug=self.kwargs["product_slug"])
+
+
+# ---------------------------------------------------------------------------
+# ProductImage  (nested under a product)
+# ---------------------------------------------------------------------------
+
+
+class ProductImageListCreateAPIView(ListCreateAPIView):
+    """
+    GET  /products/<product_slug>/images/   — list all images for a product
+    POST /products/<product_slug>/images/   — add a new image to a product
+    """
+
+    serializer_class = ProductImageCreateSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])
+
+    def perform_create(self, serializer):
+        product = Product.objects.get(slug=self.kwargs["product_slug"])
+        serializer.save(product=product)
+
+
+class ProductImageRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    GET    /products/<product_slug>/images/<pk>/
+    PUT    /products/<product_slug>/images/<pk>/
+    PATCH  /products/<product_slug>/images/<pk>/
+    DELETE /products/<product_slug>/images/<pk>/
+    """
+
+    serializer_class = ProductImageCreateSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])
+

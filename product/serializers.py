@@ -12,8 +12,8 @@ from product.models import Category, Product, ProductExtra, ProductImage, Subcat
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "slug"]
-        read_only_fields = ["id", "slug"]
+        fields = ["id", "name", "slug", "image", "created_at", "updated_at"]
+        read_only_fields = ["id", "slug", "created_at", "updated_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -22,10 +22,21 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class SubcategorySerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
     class Meta:
         model = Subcategory
-        fields = ["id", "name", "slug", "category"]
-        read_only_fields = ["id", "slug"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "image",
+            "category",
+            "category_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "slug", "created_at", "updated_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -36,15 +47,22 @@ class SubcategorySerializer(serializers.ModelSerializer):
 class ProductExtraSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductExtra
-        fields = ["id", "name", "additional_price"]
-        read_only_fields = ["id"]
+        fields = ["id", "name", "additional_price", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class ProductExtraCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductExtra
-        fields = ["id", "product", "name", "additional_price"]
-        read_only_fields = ["id"]
+        fields = [
+            "id",
+            "product",
+            "name",
+            "additional_price",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "product", "created_at", "updated_at"]
 
 
 class ProductExtraInlineSerializer(serializers.Serializer):
@@ -62,8 +80,15 @@ class ProductExtraInlineSerializer(serializers.Serializer):
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductImage
-        fields = ["id", "image"]
-        read_only_fields = ["id"]
+        fields = ["id", "image", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ProductImageCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ["id", "product", "image", "created_at", "updated_at"]
+        read_only_fields = ["id", "product", "created_at", "updated_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +110,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "slug",
+            "description",
             "price",
             "type",
             "thumbnail_image",
@@ -94,8 +120,10 @@ class ProductListSerializer(serializers.ModelSerializer):
             "sub_category_name",
             "is_best_seller",
             "prepare_time",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "slug"]
+        read_only_fields = ["id", "slug", "created_at", "updated_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +166,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
 
 # ---------------------------------------------------------------------------
-# Product — create (write)
+# Product — create/update (write)
 # ---------------------------------------------------------------------------
 
 
@@ -231,4 +259,35 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             .select_related("category", "sub_category")
             .prefetch_related("extras", "images")
             .get(pk=product.pk)
+        )
+
+    def update(self, instance, validated_data):
+        extras_data = validated_data.pop("extras", None)
+        images_data = validated_data.pop("images", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if extras_data is not None:
+            instance.extras.all().delete()
+            ProductExtra.objects.bulk_create([
+                ProductExtra(
+                    product=instance,
+                    name=extra["name"],
+                    additional_price=extra.get("additional_price", 0.0),
+                )
+                for extra in extras_data
+            ])
+
+        if images_data is not None:
+            ProductImage.objects.bulk_create([
+                ProductImage(product=instance, image=image) for image in images_data
+            ])
+
+        return (
+            Product.objects
+            .select_related("category", "sub_category")
+            .prefetch_related("extras", "images")
+            .get(pk=instance.pk)
         )
