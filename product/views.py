@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
+from rest_framework.filters import SearchFilter
 from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
@@ -7,6 +8,7 @@ from rest_framework.generics import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from product.filters import ProductFilter
 from product.models import Category, Product, ProductExtra, Subcategory
 from product.serializers import (
     CategorySerializer,
@@ -62,8 +64,9 @@ class ProductListCreateAPIView(ListCreateAPIView):
     queryset = Product.objects.select_related("category", "sub_category").all()
     serializer_class = ProductListSerializer
     permission_classes = [AllowAny]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["category", "sub_category"]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = ProductFilter
+    search_fields = ["name"]
 
     def create(self, request, *args, **kwargs):
         serializer = ProductCreateSerializer(data=request.data)
@@ -75,7 +78,8 @@ class ProductListCreateAPIView(ListCreateAPIView):
 
 class ProductRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = (
-        Product.objects.select_related("category", "sub_category")
+        Product.objects
+        .select_related("category", "sub_category")
         .prefetch_related("extras", "images")
         .all()
     )

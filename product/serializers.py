@@ -86,11 +86,14 @@ class ProductListSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "price",
+            "type",
             "thumbnail_image",
             "category",
             "category_name",
             "sub_category",
             "sub_category_name",
+            "is_best_seller",
+            "prepare_time",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -118,11 +121,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "price",
+            "type",
             "thumbnail_image",
             "category",
             "category_name",
             "sub_category",
             "sub_category_name",
+            "is_best_seller",
+            "prepare_time",
             "extras",
             "images",
             "created_at",
@@ -141,7 +147,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     Accepts a product, its extras, and additional images in a single request.
 
     multipart/form-data fields:
-      name, description, price, thumbnail_image, category, sub_category  — standard fields
+      name, description, price, type, thumbnail_image, category, sub_category, is_best_seller, prepare_time — standard fields
       extras      — JSON string, e.g. '[{"name":"Extra Cheese","additional_price":50}]'
       images      — one or more image files (send multiple 'images' fields)
     """
@@ -163,9 +169,12 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "price",
+            "type",
             "thumbnail_image",
             "category",
             "sub_category",
+            "is_best_seller",
+            "prepare_time",
             "extras",
             "images",
         ]

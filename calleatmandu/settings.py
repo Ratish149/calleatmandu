@@ -49,6 +49,9 @@ INSTALLED_APPS = [
     "product",
     "offer",
     "order",
+    "blog",
+    "faq",
+    "contact",
 ]
 
 
