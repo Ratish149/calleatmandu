@@ -2,6 +2,7 @@ import json
 
 from rest_framework import serializers
 
+from offer.selectors import calculate_product_offer_price, get_active_offers
 from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
 
 # ---------------------------------------------------------------------------
@@ -100,9 +101,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list views."""
 
     category_name = serializers.CharField(source="category.name", read_only=True)
-    sub_category_name = serializers.CharField(
-        source="sub_category.name", read_only=True
-    )
+    image = serializers.FileField(source="thumbnail_image", read_only=True)
+    offer_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -110,20 +110,22 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "slug",
-            "description",
-            "price",
-            "type",
-            "thumbnail_image",
-            "category",
             "category_name",
-            "sub_category",
-            "sub_category_name",
-            "is_best_seller",
+            "price",
+            "offer_price",
             "prepare_time",
-            "created_at",
-            "updated_at",
+            "is_best_seller",
+            "type",
+            "image",
         ]
-        read_only_fields = ["id", "slug", "created_at", "updated_at"]
+
+    def get_offer_price(self, obj):
+        active_offers = self.context.get("active_offers")
+        if active_offers is None:
+            if not hasattr(self, "_cached_active_offers"):
+                self._cached_active_offers = get_active_offers()
+            active_offers = self._cached_active_offers
+        return calculate_product_offer_price(obj, active_offers)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +142,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     )
     extras = ProductExtraSerializer(many=True, read_only=True)
     images = ProductImageSerializer(many=True, read_only=True)
+    offer_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -149,6 +152,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "price",
+            "offer_price",
             "type",
             "thumbnail_image",
             "category",
@@ -163,6 +167,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "slug", "created_at", "updated_at"]
+
+    def get_offer_price(self, obj):
+        active_offers = self.context.get("active_offers")
+        if active_offers is None:
+            if not hasattr(self, "_cached_active_offers"):
+                self._cached_active_offers = get_active_offers()
+            active_offers = self._cached_active_offers
+        return calculate_product_offer_price(obj, active_offers)
 
 
 # ---------------------------------------------------------------------------
@@ -183,12 +195,14 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     extras = serializers.CharField(
         required=False,
         default="[]",
+        write_only=True,
         help_text='JSON array, e.g. [{"name":"Extra Cheese","additional_price":50}]',
     )
     images = serializers.ListField(
         child=serializers.ImageField(),
         required=False,
         default=list,
+        write_only=True,
     )
 
     class Meta:

@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.utils import CustomPagination
 from offer.filters import OfferFilter, PromoCodeFilter
 from offer.models import Offer, PromoCode
 from offer.serializers import (
@@ -23,6 +24,7 @@ class OfferListCreateAPIView(ListCreateAPIView):
     permission_classes = [IsAuthenticatedOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_class = OfferFilter
+    pagination_class = CustomPagination
 
 
 class OfferRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):

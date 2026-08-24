@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny
 from blog.filters import BlogFilter
 from blog.models import Blog
 from blog.serializers import BlogSerializer
+from common.utils import CustomPagination
 
 
 class BlogListCreateAPIView(ListCreateAPIView):
@@ -22,6 +23,8 @@ class BlogListCreateAPIView(ListCreateAPIView):
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = BlogFilter
+    pagination_class = CustomPagination
+
     search_fields = ["title", "short_description", "content"]
 
 

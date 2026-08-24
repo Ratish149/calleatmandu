@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.template.defaultfilters import slugify
 
 from common.models import BaseModel
 
@@ -52,6 +53,7 @@ class Offer(BaseModel):
 
     # Basic Info
     title = models.CharField(max_length=255)
+    slug = models.SlugField(unique=True, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     banner_image = models.FileField(upload_to="offers/banners/", blank=True, null=True)
 
@@ -161,6 +163,10 @@ class Offer(BaseModel):
 
     def __str__(self):
         return f"{self.title} [{self.offer_type}]"
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(self.title)
+        super().save(*args, **kwargs)
 
 
 class OfferRedemption(BaseModel):

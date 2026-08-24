@@ -8,6 +8,7 @@ from rest_framework.generics import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from common.utils import CustomPagination
 from product.filters import ProductFilter
 from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
 from product.serializers import (
@@ -62,11 +63,12 @@ class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 
 class ProductListCreateAPIView(ListCreateAPIView):
-    queryset = Product.objects.select_related("category", "sub_category").all()
+    queryset = Product.objects.select_related("category").all()
     serializer_class = ProductListSerializer
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter
+    pagination_class = CustomPagination
     search_fields = ["name", "description"]
 
     def create(self, request, *args, **kwargs):
@@ -177,4 +179,3 @@ class ProductImageRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])
-

@@ -34,6 +34,7 @@ class OfferSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "slug",
             "description",
             "banner_image",
             "offer_type",
@@ -65,6 +66,62 @@ class OfferSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "current_usage_count", "created_at", "updated_at"]
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        offer_type = ret.get("offer_type")
+
+        if offer_type == Offer.OfferType.PERCENTAGE:
+            fields_to_remove = [
+                "discount_amount",
+                "buy_product",
+                "buy_quantity",
+                "get_product",
+                "get_quantity",
+                "get_discount_percentage",
+            ]
+        elif offer_type == Offer.OfferType.FLAT:
+            fields_to_remove = [
+                "discount_percentage",
+                "max_discount_amount",
+                "buy_product",
+                "buy_quantity",
+                "get_product",
+                "get_quantity",
+                "get_discount_percentage",
+            ]
+        elif offer_type == Offer.OfferType.BUY_X_GET_Y:
+            fields_to_remove = [
+                "discount_percentage",
+                "discount_amount",
+                "max_discount_amount",
+            ]
+        elif offer_type == Offer.OfferType.FREE_DELIVERY:
+            fields_to_remove = [
+                "discount_percentage",
+                "discount_amount",
+                "max_discount_amount",
+                "buy_product",
+                "buy_quantity",
+                "get_product",
+                "get_quantity",
+                "get_discount_percentage",
+            ]
+        elif offer_type == Offer.OfferType.COMBO:
+            fields_to_remove = [
+                "buy_product",
+                "buy_quantity",
+                "get_product",
+                "get_quantity",
+                "get_discount_percentage",
+            ]
+        else:
+            fields_to_remove = []
+
+        for field in fields_to_remove:
+            ret.pop(field, None)
+
+        return ret
+
     def validate(self, attrs):
         offer_type = attrs.get("offer_type", getattr(self.instance, "offer_type", None))
         if offer_type == Offer.OfferType.PERCENTAGE:
@@ -77,13 +134,29 @@ class OfferSerializer(serializers.ModelSerializer):
                     "discount_percentage": "Discount percentage must be between 0 and 100."
                 })
 
-        if offer_type == Offer.OfferType.FLAT:
+        elif offer_type == Offer.OfferType.FLAT:
             discount_amt = attrs.get(
                 "discount_amount", getattr(self.instance, "discount_amount", 0.0)
             )
             if discount_amt <= 0:
                 raise serializers.ValidationError({
                     "discount_amount": "Discount amount must be greater than 0."
+                })
+
+        elif offer_type == Offer.OfferType.BUY_X_GET_Y:
+            buy_product = attrs.get(
+                "buy_product", getattr(self.instance, "buy_product", None)
+            )
+            get_product = attrs.get(
+                "get_product", getattr(self.instance, "get_product", None)
+            )
+            if not buy_product:
+                raise serializers.ValidationError({
+                    "buy_product": "buy_product is required for BUY_X_GET_Y offers."
+                })
+            if not get_product:
+                raise serializers.ValidationError({
+                    "get_product": "get_product is required for BUY_X_GET_Y offers."
                 })
 
         return attrs

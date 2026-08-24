@@ -12,6 +12,8 @@ class Blog(BaseModel):
     time_to_read = models.IntegerField(null=True, blank=True, help_text="in minutes")
     short_description = models.TextField()
     content = models.TextField()
+    meta_title = models.CharField(max_length=255, null=True, blank=True)
+    meta_description = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.title
@@ -19,4 +21,8 @@ class Blog(BaseModel):
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.title)
+        if not self.meta_title:
+            self.meta_title = self.title
+        if not self.meta_description:
+            self.meta_description = self.short_description
         super().save(*args, **kwargs)

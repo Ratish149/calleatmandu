@@ -4,6 +4,7 @@ from rest_framework.generics import (
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from common.utils import CustomPagination
 from contact.models import Contact
 from contact.serializers import ContactSerializer
 
@@ -16,6 +17,7 @@ class ContactListCreateAPIView(ListCreateAPIView):
 
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
+    pagination_class = CustomPagination
 
     def get_permissions(self):
         if self.request.method == "POST":

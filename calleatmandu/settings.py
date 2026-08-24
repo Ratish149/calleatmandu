@@ -35,8 +35,7 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
 
-# Application definition
-
+# Application definition - registered order, offer, product, blog, contact, faq apps
 INSTALLED_APPS = [
     "unfold",
     "django.contrib.admin",
@@ -73,13 +72,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
-    "https://stars-banners-travels-dual.trycloudflare.com",
+    "https://defeat-brown-activated-accessing.trycloudflare.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
-    "https://stars-banners-travels-dual.trycloudflare.com",
+    "https://defeat-brown-activated-accessing.trycloudflare.com",
 ]
 
 MIDDLEWARE = [
