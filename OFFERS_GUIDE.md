@@ -1,34 +1,47 @@
 # Food Delivery Offer & Promotion Guide (CallEatMandu)
 
-This guide documents all possible types of offers and promo codes supported by the **CallEatMandu** system, including step-by-step instructions and sample JSON payloads for creating and checking them via the API.
+This guide documents all possible types of offers and promo codes supported by the **CallEatMandu** system, including step-by-step instructions and sample JSON payloads for creating, checking, and validating them via the API.
 
 ---
 
 ## Table of Contents
-1. [Overview of Offer Capabilities](#1-overview-of-offer-capabilities)
-2. [Supported Offer Types](#2-supported-offer-types)
-3. [Supported Scope & Targets](#3-supported-scope--targets)
-4. [Promo Codes vs. Auto-Applied Offers](#4-promo-codes-vs-auto-applied-offers)
-5. [Happy Hours & Validity Constraints](#5-happy-hours--validity-constraints)
-6. [How to Create Offers (API Payload Examples)](#6-how-to-create-offers-api-payload-examples)
-7. [How to Check/Validate Offers during Checkout](#7-how-to-checkvalidate-offers-during-checkout)
+1. [Overview of Offer & Promo Code Capabilities](#1-overview-of-offer--promo-code-capabilities)
+2. [Promo Code Architecture (`PromoCode`)](#2-promo-code-architecture-promocode)
+3. [Supported Offer Types (`Offer`)](#3-supported-offer-types-offer)
+4. [Supported Scope & Targets](#4-supported-scope--targets)
+5. [How to Create Promo Codes (API Payload Examples)](#5-how-to-create-promo-codes-api-payload-examples)
+6. [How to Check & Validate Promo Codes](#6-how-to-check--validate-promo-codes)
+7. [How to Evaluate Cart Deals](#7-how-to-evaluate-cart-deals)
 
 ---
 
-## 1. Overview of Offer Capabilities
+## 1. Overview of Offer & Promo Code Capabilities
 
-The `offer` app supports a highly flexible promotion engine suitable for online food delivery platforms. You can create:
-- **Order/Cart-level discounts** (e.g. 15% off orders above Rs. 1,000).
-- **Category & Subcategory discounts** (e.g. Flat Rs. 100 off on all Bakery items).
-- **Product-specific deals** (e.g. 20% off on Large Chicken Pizza).
-- **Buy X Get Y (BOGO) Deals** (e.g. Buy 1 Burger get 1 Coke free, or Buy 2 Pizzas get Garlic Bread at 50% off).
-- **Free Delivery Promotions** (e.g. Free delivery on orders over Rs. 500).
-- **Happy Hours & Time Slot Deals** (e.g. Lunch hour discount valid only between 12:00 PM – 3:00 PM).
-- **Promo Codes & Vouchers** (e.g. Coupon codes like `WELCOME50` or `SUMMER2026`).
+The system supports two complementary promotion mechanisms:
+1. **Standalone Promo Codes (`PromoCode`)**: Custom coupon codes (e.g. `WELCOME50`, `FLAT100`, `SUPER15`) with direct discount configuration (`AMOUNT` or `PERCENTAGE`), validity dates, overall usage caps, and per-user usage limits.
+2. **Offers Engine (`Offer`)**: Complex deals including Buy-X-Get-Y (BOGO), Free Delivery, Category/Subcategory/Product specific discounts, and Happy Hour deals.
 
 ---
 
-## 2. Supported Offer Types
+## 2. Promo Code Architecture (`PromoCode`)
+
+Each `PromoCode` is configured directly with its own discount type and amount:
+
+| Field Name | Type | Description |
+| :--- | :--- | :--- |
+| `code` | String | Unique coupon code (e.g. `SUMMER50`). Auto-converted to uppercase. |
+| `description` | String | Optional description of the promotion. |
+| `promo_type` | String (`AMOUNT` \| `PERCENTAGE`) | Type of discount: `AMOUNT` (Fixed amount in Rs.) or `PERCENTAGE` (Rate between 0–100%). |
+| `amount` | Float | Discount value (e.g. `100.0` for Rs. 100 flat, or `15.0` for 15%). |
+| `max_total_usage` | Integer (optional) | Maximum times this promo code can be redeemed overall. |
+| `max_usage_per_user` | Integer (default: 1) | Maximum times an individual logged-in user can redeem it. |
+| `start_datetime` | DateTime (optional) | Start date & time when promo code becomes valid. |
+| `end_datetime` | DateTime (optional) | Expiry date & time after which promo code is invalid. |
+| `is_active` | Boolean (default: true) | Master active toggle. |
+
+---
+
+## 3. Supported Offer Types (`Offer`)
 
 | `offer_type` | Description | Relevant Fields Required |
 | :--- | :--- | :--- |
@@ -40,125 +53,105 @@ The `offer` app supports a highly flexible promotion engine suitable for online 
 
 ---
 
-## 3. Supported Scope & Targets
+## 4. Supported Scope & Targets
 
 | `scope` | Applies To | Relevant Foreign Key Fields |
 | :--- | :--- | :--- |
 | `CART` | Entire order / cart total. | None (applies to whole cart) |
-| `CATEGORY` | All food items within a specific category. | `category` (e.g. Category ID for Bakery) |
-| `SUBCATEGORY` | All items within a specific subcategory. | `subcategory` (e.g. Subcategory ID for Cakes) |
+| `CATEGORY` | All food items within a specific category. | `category` (Category ID) |
+| `SUBCATEGORY` | All items within a specific subcategory. | `subcategory` (Subcategory ID) |
 | `PRODUCT` | One or more specific products. | `products` (List of Product IDs) |
 
 ---
 
-## 4. Promo Codes vs. Auto-Applied Offers
+## 5. How to Create Promo Codes (API Payload Examples)
 
-- **Auto-Applied Offers**: If an offer has **no** `PromoCode` attached, the system automatically checks and applies the best active offer to eligible carts during checkout.
-- **Promo Code Offers**: If a `PromoCode` (e.g. `MOMO50`) is linked to an offer, the customer must manually enter the coupon code to receive the discount.
-
-Multiple promo codes can point to a single offer (e.g., `INFLUENCER1`, `INFLUENCER2` both granting 15% discount).
-
----
-
-## 5. Happy Hours & Validity Constraints
-
-Offers and Promo Codes can be restricted using:
-- **`start_datetime` & `end_datetime`**: Valid date range (e.g. 2026-08-01 to 2026-08-31).
-- **`start_time` & `end_time`**: Daily time window for Happy Hours (e.g. `12:00:00` to `15:00:00`).
-- **`min_order_amount`**: Minimum cart subtotal required (e.g. Rs. 500).
-- **`max_total_usage`**: Total number of times this offer/promo code can be redeemed overall.
-- **`max_usage_per_user`**: Max times an individual logged-in user can redeem it.
-
----
-
-## 6. How to Create Offers (API Payload Examples)
-
-### Scenario A: Flat 15% Off Cart Above Rs. 1000 (Max Discount Rs. 300)
-`POST /api/offers/`
+### Scenario A: Create a Flat Rs. 100 Off Promo Code
+`POST /api/promo-codes/`
 ```json
 {
-  "title": "Monsoon Mega Sale",
-  "description": "Get 15% off on orders above Rs. 1000 up to Rs. 300.",
-  "banner_image": "offers/banners/monsoon_sale_banner.jpg",
-  "offer_type": "PERCENTAGE",
-
-  "scope": "CART",
-  "discount_percentage": 15.0,
-  "max_discount_amount": 300.0,
-  "min_order_amount": 1000.0,
-  "is_active": true
-}
-```
-
-
----
-
-### Scenario B: Buy 1 Momo Get 1 Coke Free (BOGO)
-`POST /api/offers/`
-```json
-{
-  "title": "Buy 1 Steam Momo Get 1 Coke Free",
-  "description": "Buy 1 Steam Momo and get a 250ml Coke absolutely free!",
-  "offer_type": "BUY_X_GET_Y",
-  "scope": "PRODUCT",
-  "buy_product": 5,
-  "buy_quantity": 1,
-  "get_product": 12,
-  "get_quantity": 1,
-  "get_discount_percentage": 100.0,
-  "is_active": true
-}
-```
-
----
-
-### Scenario C: Lunch Happy Hour (Flat Rs. 100 Off from 12 PM to 3 PM)
-`POST /api/offers/`
-```json
-{
-  "title": "Lunch Happy Hour Special",
-  "description": "Flat Rs. 100 off on all lunch orders between 12 PM and 3 PM.",
-  "offer_type": "FLAT",
-  "scope": "CART",
-  "discount_amount": 100.0,
-  "min_order_amount": 400.0,
-  "start_time": "12:00:00",
-  "end_time": "15:00:00",
-  "is_active": true
-}
-```
-
----
-
-### Scenario D: Create a Coupon Code linked to an Offer
-1. Create the Offer (or use an existing offer ID):
-   `POST /api/offers/` (Returns `id: 3`)
-
-2. Create the Promo Code linking to Offer ID 3:
-   `POST /api/promo-codes/`
-```json
-{
-  "code": "WELCOME50",
-  "description": "Welcome coupon for new users",
-  "offer": 3,
-  "max_usage_per_user": 1,
+  "code": "FLAT100",
+  "description": "Flat Rs. 100 off on all orders",
+  "promo_type": "AMOUNT",
+  "amount": 100.0,
   "max_total_usage": 500,
+  "max_usage_per_user": 1,
   "is_active": true
 }
 ```
 
 ---
 
-## 7. How to Check/Validate Offers during Checkout
+### Scenario B: Create a 20% Off Promo Code
+`POST /api/promo-codes/`
+```json
+{
+  "code": "SAVE20",
+  "description": "20% percentage discount promo code",
+  "promo_type": "PERCENTAGE",
+  "amount": 20.0,
+  "max_total_usage": 1000,
+  "max_usage_per_user": 2,
+  "start_datetime": "2026-08-01T00:00:00Z",
+  "end_datetime": "2026-08-31T23:59:59Z",
+  "is_active": true
+}
+```
 
-Frontend apps send cart contents and optional promo code to the check endpoint:
+---
 
-`POST /api/offers/check/`
+## 6. How to Check & Validate Promo Codes
+
+Frontend applications can send a promo code string (and optional cart total) to validate it and get its calculated discount:
+
+`POST /api/promo-codes/check/`
+
+**Headers:**
+`Authorization: Bearer <access_token>`
 
 ### Request Payload:
 ```json
 {
-  "promo_code": "WELCOME50",
+  "code": "FLAT100",
+  "cart_total": 850.0
+}
+```
+
+### Successful Response (`HTTP 200 OK`):
+```json
+{
+  "is_valid": true,
+  "message": "Promo code is valid.",
+  "promo_code": {
+    "id": 1,
+    "code": "FLAT100",
+    "description": "Flat Rs. 100 off on all orders",
+    "promo_type": "AMOUNT",
+    "amount": 100.0,
+    "max_total_usage": 500,
+    "max_usage_per_user": 1,
+    "current_usage_count": 12,
+    "start_datetime": null,
+    "end_datetime": null,
+    "calculated_discount": 100.0,
+    "final_amount": 750.0
+  }
+}
+```
+
+---
+
+## 7. How to Evaluate Cart Deals
+
+`POST /api/offers/check/`
+
+**Headers:**
+`Authorization: Bearer <access_token>`
+
+### Request Payload:
+```json
+{
+  "promo_code": "FLAT100",
   "cart_total": 850.0,
   "cart_items": [
     {
@@ -166,28 +159,25 @@ Frontend apps send cart contents and optional promo code to the check endpoint:
       "category_id": 2,
       "price": 250.0,
       "quantity": 2
-    },
-    {
-      "product_id": 10,
-      "category_id": 4,
-      "price": 350.0,
-      "quantity": 1
     }
   ]
 }
 ```
 
-### Successful Response:
+### Response:
 ```json
 {
   "is_valid": true,
-  "message": "Offer applied successfully.",
-  "offer_id": 3,
-  "offer_title": "Welcome Special Offer",
-  "promo_code": "WELCOME50",
-  "discount_amount": 150.0,
-  "final_amount": 700.0,
-  "reward_details": {}
+  "message": "Promo code applied successfully.",
+  "offer_id": null,
+  "offer_title": "Promo Code: FLAT100",
+  "promo_code": "FLAT100",
+  "discount_amount": 100.0,
+  "final_amount": 750.0,
+  "reward_details": {
+    "promo_type": "AMOUNT",
+    "amount": 100.0
+  }
 }
 ```
 
@@ -195,8 +185,9 @@ Frontend apps send cart contents and optional promo code to the check endpoint:
 
 ## API Summary Quick Reference
 
-- **List / Create Offers**: `GET` / `POST` `/api/offers/`
-- **Update / Delete Offer**: `GET` / `PUT` / `DELETE` `/api/offers/<id>/`
 - **List / Create Promo Codes**: `GET` / `POST` `/api/promo-codes/`
 - **Update / Delete Promo Code**: `GET` / `PUT` / `DELETE` `/api/promo-codes/<id>/`
-- **Verify & Calculate Discount**: `POST` `/api/offers/check/`
+- **Check & Validate Promo Code**: `POST /api/promo-codes/check/`
+- **List / Create Offers**: `GET` / `POST` `/api/offers/`
+- **Update / Delete Offer**: `GET` / `PUT` / `DELETE` `/api/offers/<id>/`
+- **Verify & Calculate Cart Deals**: `POST /api/offers/check/`

@@ -49,20 +49,67 @@ class OfferService:
         return True, None
 
     @classmethod
-    def evaluate_cart_offer(cls, cart_items, cart_total, promo_code_str=None, user=None):
+    def check_promo_code_detail(cls, code_str, cart_total=0.0, user=None):
         """
-        cart_items format:
-        [
-            {"product_id": 1, "category_id": 2, "subcategory_id": 5, "price": 250.0, "quantity": 2},
-            ...
-        ]
+        Validates a promo code string and returns its full detail and calculated discount.
         """
         now = timezone.now()
-        promo_code_obj = None
+        try:
+            promo_code = PromoCode.objects.get(code__iexact=code_str.strip())
+        except PromoCode.DoesNotExist:
+            return {
+                "is_valid": False,
+                "message": "Invalid promo code.",
+                "promo_code": None,
+            }
+
+        is_valid, err_msg = cls.is_promo_code_valid(promo_code, user=user, now=now)
+        if not is_valid:
+            return {
+                "is_valid": False,
+                "message": err_msg,
+                "promo_code": {
+                    "id": promo_code.id,
+                    "code": promo_code.code,
+                    "description": promo_code.description,
+                    "promo_type": promo_code.promo_type,
+                    "amount": promo_code.amount,
+                    "is_active": promo_code.is_active,
+                },
+            }
+
+        calculated_discount = promo_code.calculate_discount(cart_total) if cart_total > 0 else 0.0
+        final_amount = max(0.0, round(cart_total - calculated_discount, 2)) if cart_total > 0 else 0.0
+
+        return {
+            "is_valid": True,
+            "message": "Promo code is valid.",
+            "promo_code": {
+                "id": promo_code.id,
+                "code": promo_code.code,
+                "description": promo_code.description,
+                "promo_type": promo_code.promo_type,
+                "amount": promo_code.amount,
+                "max_total_usage": promo_code.max_total_usage,
+                "max_usage_per_user": promo_code.max_usage_per_user,
+                "current_usage_count": promo_code.current_usage_count,
+                "start_datetime": promo_code.start_datetime,
+                "end_datetime": promo_code.end_datetime,
+                "calculated_discount": calculated_discount,
+                "final_amount": final_amount,
+            },
+        }
+
+    @classmethod
+    def evaluate_cart_offer(cls, cart_items, cart_total, promo_code_str=None, user=None):
+        """
+        Evaluates a promo code or active offer for a cart.
+        """
+        now = timezone.now()
 
         if promo_code_str:
             try:
-                promo_code_obj = PromoCode.objects.select_related("offer").get(
+                promo_code_obj = PromoCode.objects.get(
                     code__iexact=promo_code_str
                 )
             except PromoCode.DoesNotExist:
@@ -82,20 +129,35 @@ class OfferService:
                     "final_amount": cart_total,
                 }
 
-            offer = promo_code_obj.offer
-        else:
-            # Look for active auto-applied offer
-            offer = Offer.objects.filter(
-                is_active=True
-            ).order_by("-discount_percentage", "-discount_amount").first()
+            discount_amount = promo_code_obj.calculate_discount(cart_total)
+            final_amount = max(0.0, round(cart_total - discount_amount, 2))
 
-            if not offer:
-                return {
-                    "is_valid": False,
-                    "message": "No active offer available.",
-                    "discount_amount": 0.0,
-                    "final_amount": cart_total,
-                }
+            return {
+                "is_valid": True,
+                "message": "Promo code applied successfully.",
+                "offer_id": None,
+                "offer_title": f"Promo Code: {promo_code_obj.code}",
+                "promo_code": promo_code_obj.code,
+                "discount_amount": discount_amount,
+                "final_amount": final_amount,
+                "reward_details": {
+                    "promo_type": promo_code_obj.promo_type,
+                    "amount": promo_code_obj.amount,
+                },
+            }
+
+        # Look for active auto-applied offer
+        offer = Offer.objects.filter(
+            is_active=True
+        ).order_by("-discount_percentage", "-discount_amount").first()
+
+        if not offer:
+            return {
+                "is_valid": False,
+                "message": "No active offer available.",
+                "discount_amount": 0.0,
+                "final_amount": cart_total,
+            }
 
         if not offer.is_active:
             return {
@@ -161,15 +223,15 @@ class OfferService:
                 "discount_percentage": offer.get_discount_percentage,
             }
 
-        final_amount = max(0.0, cart_total - discount_amount)
+        final_amount = max(0.0, round(cart_total - discount_amount, 2))
 
         return {
             "is_valid": True,
             "message": "Offer applied successfully.",
             "offer_id": offer.id,
             "offer_title": offer.title,
-            "promo_code": promo_code_obj.code if promo_code_obj else None,
+            "promo_code": None,
             "discount_amount": round(discount_amount, 2),
-            "final_amount": round(final_amount, 2),
+            "final_amount": final_amount,
             "reward_details": reward_details,
         }

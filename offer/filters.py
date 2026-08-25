@@ -29,9 +29,9 @@ class OfferFilter(filters.FilterSet):
 
 class PromoCodeFilter(filters.FilterSet):
     code = filters.CharFilter(lookup_expr="icontains")
+    promo_type = filters.ChoiceFilter(choices=PromoCode.PromoCodeType.choices)
     is_active = filters.BooleanFilter()
-    offer = filters.NumberFilter(field_name="offer__id")
 
     class Meta:
         model = PromoCode
-        fields = ["code", "is_active", "offer"]
+        fields = ["code", "promo_type", "is_active"]

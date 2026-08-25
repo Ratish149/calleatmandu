@@ -1,12 +1,7 @@
 from django.contrib import admin
-from unfold.admin import ModelAdmin, TabularInline
+from unfold.admin import ModelAdmin
 
 from offer.models import Offer, OfferRedemption, PromoCode
-
-
-class PromoCodeInline(TabularInline):
-    model = PromoCode
-    extra = 0
 
 
 @admin.register(Offer)
@@ -25,7 +20,6 @@ class OfferAdmin(ModelAdmin):
     list_filter = ["offer_type", "scope", "is_active", "created_at"]
     search_fields = ["title", "description"]
     filter_horizontal = ["products"]
-    inlines = [PromoCodeInline]
     ordering = ["-created_at"]
 
 
@@ -33,16 +27,18 @@ class OfferAdmin(ModelAdmin):
 class PromoCodeAdmin(ModelAdmin):
     list_display = [
         "code",
-        "offer",
+        "promo_type",
+        "amount",
         "max_total_usage",
+        "max_usage_per_user",
         "current_usage_count",
         "is_active",
         "start_datetime",
         "end_datetime",
         "created_at",
     ]
-    list_filter = ["is_active", "created_at"]
-    search_fields = ["code", "offer__title", "description"]
+    list_filter = ["promo_type", "is_active", "created_at"]
+    search_fields = ["code", "description"]
     ordering = ["-created_at"]
 
 

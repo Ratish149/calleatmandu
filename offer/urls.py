@@ -4,6 +4,7 @@ from offer.views import (
     OfferCheckAPIView,
     OfferListCreateAPIView,
     OfferRetrieveUpdateDestroyAPIView,
+    PromoCodeCheckAPIView,
     PromoCodeListCreateAPIView,
     PromoCodeRetrieveUpdateDestroyAPIView,
 )
@@ -16,11 +17,16 @@ urlpatterns = [
         OfferRetrieveUpdateDestroyAPIView.as_view(),
         name="offer-detail",
     ),
-    # PromoCode CRUD endpoints
+    # PromoCode CRUD & Check endpoints
     path(
         "promo-codes/",
         PromoCodeListCreateAPIView.as_view(),
         name="promocode-list-create",
+    ),
+    path(
+        "promo-codes/check/",
+        PromoCodeCheckAPIView.as_view(),
+        name="promocode-check",
     ),
     path(
         "promo-codes/<int:pk>/",

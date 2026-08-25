@@ -2,8 +2,9 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 
+from common.permissions import IsStaffOrOperationalRole
 from common.utils import CustomPagination
 from contact.models import Contact
 from contact.serializers import ContactSerializer
@@ -11,7 +12,7 @@ from contact.serializers import ContactSerializer
 
 class ContactListCreateAPIView(ListCreateAPIView):
     """
-    GET  /api/contacts/   — List all contact submissions (authenticated users only)
+    GET  /api/contacts/   — List all contact submissions (staff/operational roles only)
     POST /api/contacts/   — Create a new contact submission (public)
     """
 
@@ -22,17 +23,17 @@ class ContactListCreateAPIView(ListCreateAPIView):
     def get_permissions(self):
         if self.request.method == "POST":
             return [AllowAny()]
-        return [IsAuthenticated()]
+        return [IsStaffOrOperationalRole()]
 
 
 class ContactRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     """
-    GET    /api/contacts/<pk>/   — Retrieve a contact submission by ID (authenticated)
-    PUT    /api/contacts/<pk>/   — Update a contact submission by ID (authenticated)
-    PATCH  /api/contacts/<pk>/   — Partial update a contact submission by ID (authenticated)
-    DELETE /api/contacts/<pk>/   — Delete a contact submission by ID (authenticated)
+    GET    /api/contacts/<pk>/   — Retrieve a contact submission by ID (staff/operational roles only)
+    PUT    /api/contacts/<pk>/   — Update a contact submission by ID (staff/operational roles only)
+    PATCH  /api/contacts/<pk>/   — Partial update a contact submission by ID (staff/operational roles only)
+    DELETE /api/contacts/<pk>/   — Delete a contact submission by ID (staff/operational roles only)
     """
 
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffOrOperationalRole]

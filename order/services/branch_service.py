@@ -30,7 +30,7 @@ class BranchAssignmentService:
         Finds the nearest active branch to the given customer coordinates.
         Returns the Branch instance or None if no active branches exist.
         """
-        active_branches = Branch.objects.filter(is_active=True).only(
+        active_branches = Branch.objects.all().only(
             "id", "name", "address", "latitude", "longitude"
         )
 

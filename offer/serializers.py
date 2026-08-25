@@ -10,7 +10,8 @@ class PromoCodeSerializer(serializers.ModelSerializer):
             "id",
             "code",
             "description",
-            "offer",
+            "promo_type",
+            "amount",
             "max_total_usage",
             "max_usage_per_user",
             "current_usage_count",
@@ -25,10 +26,30 @@ class PromoCodeSerializer(serializers.ModelSerializer):
     def validate_code(self, value):
         return value.upper().strip()
 
+    def validate(self, attrs):
+        promo_type = attrs.get("promo_type", getattr(self.instance, "promo_type", None))
+        amount = attrs.get("amount", getattr(self.instance, "amount", 0.0))
+
+        if promo_type == PromoCode.PromoCodeType.PERCENTAGE:
+            if amount <= 0 or amount > 100:
+                raise serializers.ValidationError({
+                    "amount": "Percentage discount amount must be between 0 and 100."
+                })
+        elif promo_type == PromoCode.PromoCodeType.AMOUNT:
+            if amount <= 0:
+                raise serializers.ValidationError({
+                    "amount": "Discount amount must be greater than 0."
+                })
+
+        return attrs
+
+
+class PromoCodeCheckSerializer(serializers.Serializer):
+    code = serializers.CharField(required=True)
+    cart_total = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+
 
 class OfferSerializer(serializers.ModelSerializer):
-    promo_codes = PromoCodeSerializer(many=True, read_only=True)
-
     class Meta:
         model = Offer
         fields = [
@@ -60,7 +81,6 @@ class OfferSerializer(serializers.ModelSerializer):
             "start_time",
             "end_time",
             "is_active",
-            "promo_codes",
             "created_at",
             "updated_at",
         ]

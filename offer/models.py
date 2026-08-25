@@ -6,13 +6,21 @@ from common.models import BaseModel
 
 
 class PromoCode(BaseModel):
+    class PromoCodeType(models.TextChoices):
+        AMOUNT = "AMOUNT", "Fixed Amount Discount"
+        PERCENTAGE = "PERCENTAGE", "Percentage Discount"
+
     code = models.CharField(max_length=50, unique=True, db_index=True)
     description = models.TextField(blank=True, null=True)
-    offer = models.ForeignKey(
-        "Offer",
-        on_delete=models.CASCADE,
-        related_name="promo_codes",
-        help_text="The offer linked to this promo code.",
+    promo_type = models.CharField(
+        max_length=20,
+        choices=PromoCodeType.choices,
+        default=PromoCodeType.AMOUNT,
+        db_index=True,
+    )
+    amount = models.FloatField(
+        default=0.0,
+        help_text="Discount value: amount in Rs. for AMOUNT type, or percentage rate (0-100) for PERCENTAGE type.",
     )
     max_total_usage = models.PositiveIntegerField(
         null=True,
@@ -30,11 +38,27 @@ class PromoCode(BaseModel):
     class Meta:
         indexes = [
             models.Index(fields=["code", "is_active"]),
+            models.Index(fields=["promo_type", "is_active"]),
             models.Index(fields=["is_active", "start_datetime", "end_datetime"]),
         ]
 
     def __str__(self):
-        return f"{self.code} -> {self.offer.title}"
+        return f"{self.code} [{self.get_promo_type_display()}: {self.amount}]"
+
+    def calculate_discount(self, cart_total):
+        """
+        Calculates discount amount for a given cart total based on promo_type (AMOUNT or PERCENTAGE).
+        """
+        if not self.is_active or cart_total <= 0:
+            return 0.0
+
+        if self.promo_type == self.PromoCodeType.PERCENTAGE:
+            discount = (cart_total * self.amount) / 100.0
+            return round(discount, 2)
+        elif self.promo_type == self.PromoCodeType.AMOUNT:
+            discount = min(self.amount, cart_total)
+            return round(discount, 2)
+        return 0.0
 
 
 class Offer(BaseModel):
@@ -171,7 +195,11 @@ class Offer(BaseModel):
 
 class OfferRedemption(BaseModel):
     offer = models.ForeignKey(
-        "Offer", on_delete=models.CASCADE, related_name="redemptions"
+        "Offer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="redemptions",
     )
     promo_code = models.ForeignKey(
         "PromoCode",
@@ -196,4 +224,5 @@ class OfferRedemption(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.user} redeemed {self.offer.title}"
+        target = self.promo_code.code if self.promo_code else (self.offer.title if self.offer else "Discount")
+        return f"{self.user} redeemed {target}"

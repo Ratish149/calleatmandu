@@ -39,7 +39,6 @@ class Order(BaseModel):
         help_text="Nearest branch assigned to fulfill this order.",
     )
 
-
     # Customer Details
     customer_name = models.CharField(max_length=150)
     phone_number = models.CharField(max_length=20)
