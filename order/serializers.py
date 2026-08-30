@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from account.serializers import BranchSerializer
 from order.models import Order, OrderItem, OrderItemExtra
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,35 @@ class OrderCreateSerializer(serializers.Serializer):
         required=False, allow_blank=True, allow_null=True
     )
     items = OrderItemCreateSerializer(many=True, min_length=1)
+
+
+class OrderResponseSerializer(serializers.ModelSerializer):
+    """
+    Dedicated response serializer returned when listing, retrieving, or creating orders.
+    """
+
+    items = OrderItemSerializer(many=True, read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    branch = BranchSerializer(read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "order_number",
+            "branch",
+            "branch_name",
+            "customer_name",
+            "phone_number",
+            "delivery_location",
+            "total_amount",
+            "discount_amount",
+            "status",
+            "items",
+        ]
+
+
+# Alias for backward compatibility if referenced elsewhere
+OrderCreateResponseSerializer = OrderResponseSerializer
 
 
 class OrderSerializer(serializers.ModelSerializer):
