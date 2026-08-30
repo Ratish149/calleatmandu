@@ -5,7 +5,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from common.utils import CustomPagination
@@ -29,13 +29,21 @@ from product.serializers import (
 class CategoryListCreateAPIView(ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 # ---------------------------------------------------------------------------
@@ -46,15 +54,23 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class SubcategoryListCreateAPIView(ListCreateAPIView):
     queryset = Subcategory.objects.select_related("category").all()
     serializer_class = SubcategorySerializer
-    permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["category"]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Subcategory.objects.select_related("category").all()
     serializer_class = SubcategorySerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +81,15 @@ class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class ProductListCreateAPIView(ListCreateAPIView):
     queryset = Product.objects.select_related("category").all()
     serializer_class = ProductListSerializer
-    permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter
     pagination_class = CustomPagination
     search_fields = ["name", "description"]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def create(self, request, *args, **kwargs):
         serializer = ProductCreateSerializer(data=request.data)
@@ -87,8 +107,12 @@ class ProductRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         .all()
     )
     serializer_class = ProductDetailSerializer
-    permission_classes = [AllowAny]
     lookup_field = "slug"
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.request.method in ["PUT", "PATCH"]:
@@ -119,7 +143,11 @@ class ProductExtraListCreateAPIView(ListCreateAPIView):
     """
 
     serializer_class = ProductExtraCreateSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return ProductExtra.objects.filter(product__slug=self.kwargs["product_slug"])
@@ -138,7 +166,11 @@ class ProductExtraRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     """
 
     serializer_class = ProductExtraCreateSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return ProductExtra.objects.filter(product__slug=self.kwargs["product_slug"])
@@ -156,7 +188,11 @@ class ProductImageListCreateAPIView(ListCreateAPIView):
     """
 
     serializer_class = ProductImageCreateSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])
@@ -175,7 +211,11 @@ class ProductImageRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     """
 
     serializer_class = ProductImageCreateSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])

@@ -4,7 +4,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from blog.filters import BlogFilter
 from blog.models import Blog
@@ -14,29 +14,37 @@ from common.utils import CustomPagination
 
 class BlogListCreateAPIView(ListCreateAPIView):
     """
-    GET  /api/blogs/   — List all blogs (supports search & filter)
-    POST /api/blogs/   — Create a new blog
+    GET  /api/blogs/   — List all blogs (supports search & filter, public access)
+    POST /api/blogs/   — Create a new blog (authenticated users only)
     """
 
     queryset = Blog.objects.all()
     serializer_class = BlogSerializer
-    permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = BlogFilter
     pagination_class = CustomPagination
 
     search_fields = ["title", "short_description", "content"]
 
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
 
 class BlogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     """
-    GET    /api/blogs/<slug>/   — Retrieve a blog by slug
-    PUT    /api/blogs/<slug>/   — Update a blog by slug
-    PATCH  /api/blogs/<slug>/   — Partial update a blog by slug
-    DELETE /api/blogs/<slug>/   — Delete a blog by slug
+    GET    /api/blogs/<slug>/   — Retrieve a blog by slug (public access)
+    PUT    /api/blogs/<slug>/   — Update a blog by slug (authenticated users only)
+    PATCH  /api/blogs/<slug>/   — Partial update a blog by slug (authenticated users only)
+    DELETE /api/blogs/<slug>/   — Delete a blog by slug (authenticated users only)
     """
 
     queryset = Blog.objects.all()
     serializer_class = BlogSerializer
-    permission_classes = [AllowAny]
     lookup_field = "slug"
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]

@@ -1,7 +1,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,10 +22,14 @@ class OfferListCreateAPIView(ListCreateAPIView):
         "category", "subcategory", "buy_product", "get_product"
     )
     serializer_class = OfferSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_class = OfferFilter
     pagination_class = CustomPagination
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class OfferRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
@@ -33,21 +37,33 @@ class OfferRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         "category", "subcategory", "buy_product", "get_product"
     )
     serializer_class = OfferSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class PromoCodeListCreateAPIView(ListCreateAPIView):
     queryset = PromoCode.objects.all()
     serializer_class = PromoCodeSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_class = PromoCodeFilter
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class PromoCodeRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = PromoCode.objects.all()
     serializer_class = PromoCodeSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class OfferCheckAPIView(APIView):
