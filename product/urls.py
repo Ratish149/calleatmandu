@@ -15,23 +15,52 @@ from product.views import (
 
 urlpatterns = [
     # Categories
-    path("categories/", CategoryListCreateAPIView.as_view(), name="category-list-create"),
-    path("categories/<int:pk>/", CategoryRetrieveUpdateDestroyAPIView.as_view(), name="category-detail"),
-
+    path(
+        "categories/", CategoryListCreateAPIView.as_view(), name="category-list-create"
+    ),
+    path(
+        "categories/<slug:slug>/",
+        CategoryRetrieveUpdateDestroyAPIView.as_view(),
+        name="category-detail",
+    ),
     # Subcategories
-    path("subcategories/", SubcategoryListCreateAPIView.as_view(), name="subcategory-list-create"),
-    path("subcategories/<int:pk>/", SubcategoryRetrieveUpdateDestroyAPIView.as_view(), name="subcategory-detail"),
-
+    path(
+        "subcategories/",
+        SubcategoryListCreateAPIView.as_view(),
+        name="subcategory-list-create",
+    ),
+    path(
+        "subcategories/<slug:slug>/",
+        SubcategoryRetrieveUpdateDestroyAPIView.as_view(),
+        name="subcategory-detail",
+    ),
     # Products  — identified by slug
     path("products/", ProductListCreateAPIView.as_view(), name="product-list-create"),
-    path("products/<slug:slug>/", ProductRetrieveUpdateDestroyAPIView.as_view(), name="product-detail"),
-
+    path(
+        "products/<slug:slug>/",
+        ProductRetrieveUpdateDestroyAPIView.as_view(),
+        name="product-detail",
+    ),
     # Product Extras  (nested under product slug)
-    path("products/<slug:product_slug>/extras/", ProductExtraListCreateAPIView.as_view(), name="product-extra-list-create"),
-    path("products/<slug:product_slug>/extras/<int:pk>/", ProductExtraRetrieveUpdateDestroyAPIView.as_view(), name="product-extra-detail"),
-
+    path(
+        "products/<slug:product_slug>/extras/",
+        ProductExtraListCreateAPIView.as_view(),
+        name="product-extra-list-create",
+    ),
+    path(
+        "products/<slug:product_slug>/extras/<int:pk>/",
+        ProductExtraRetrieveUpdateDestroyAPIView.as_view(),
+        name="product-extra-detail",
+    ),
     # Product Images  (nested under product slug)
-    path("products/<slug:product_slug>/images/", ProductImageListCreateAPIView.as_view(), name="product-image-list-create"),
-    path("products/<slug:product_slug>/images/<int:pk>/", ProductImageRetrieveUpdateDestroyAPIView.as_view(), name="product-image-detail"),
+    path(
+        "products/<slug:product_slug>/images/",
+        ProductImageListCreateAPIView.as_view(),
+        name="product-image-list-create",
+    ),
+    path(
+        "products/<slug:product_slug>/images/<int:pk>/",
+        ProductImageRetrieveUpdateDestroyAPIView.as_view(),
+        name="product-image-detail",
+    ),
 ]
-

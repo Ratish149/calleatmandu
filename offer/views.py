@@ -18,7 +18,7 @@ from offer.services.offer_service import OfferService
 
 
 class OfferListCreateAPIView(ListCreateAPIView):
-    queryset = Offer.objects.prefetch_related("promo_codes", "products").select_related(
+    queryset = Offer.objects.prefetch_related("products").select_related(
         "category", "subcategory", "buy_product", "get_product"
     )
     serializer_class = OfferSerializer
@@ -33,7 +33,7 @@ class OfferListCreateAPIView(ListCreateAPIView):
 
 
 class OfferRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
-    queryset = Offer.objects.prefetch_related("promo_codes", "products").select_related(
+    queryset = Offer.objects.prefetch_related("products").select_related(
         "category", "subcategory", "buy_product", "get_product"
     )
     serializer_class = OfferSerializer

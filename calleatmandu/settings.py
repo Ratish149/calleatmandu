@@ -72,13 +72,15 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
-    "https://curve-portland-reliable-vertical.trycloudflare.com",
+    "http://192.168.1.96:3000",
+    "https://additionally-buf-simon-null.trycloudflare.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
-    "https://curve-portland-reliable-vertical.trycloudflare.com",
+    "http://192.168.1.96:3000",
+    "https://additionally-buf-simon-null.trycloudflare.com",
 ]
 
 MIDDLEWARE = [

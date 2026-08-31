@@ -9,7 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from common.utils import CustomPagination
-from product.filters import ProductFilter
+from product.filters import CategoryFilter, ProductFilter, SubcategoryFilter
 from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
 from product.serializers import (
     CategorySerializer,
@@ -29,6 +29,9 @@ from product.serializers import (
 class CategoryListCreateAPIView(ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = CategoryFilter
+    search_fields = ["name"]
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -39,6 +42,7 @@ class CategoryListCreateAPIView(ListCreateAPIView):
 class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    lookup_field = "slug"
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -54,8 +58,9 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class SubcategoryListCreateAPIView(ListCreateAPIView):
     queryset = Subcategory.objects.select_related("category").all()
     serializer_class = SubcategorySerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["category"]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = SubcategoryFilter
+    search_fields = ["name"]
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -66,6 +71,7 @@ class SubcategoryListCreateAPIView(ListCreateAPIView):
 class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Subcategory.objects.select_related("category").all()
     serializer_class = SubcategorySerializer
+    lookup_field = "slug"
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -79,7 +85,7 @@ class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 
 class ProductListCreateAPIView(ListCreateAPIView):
-    queryset = Product.objects.select_related("category").all()
+    queryset = Product.objects.select_related("category").all().order_by("-created_at")
     serializer_class = ProductListSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter

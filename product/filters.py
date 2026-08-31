@@ -1,7 +1,38 @@
 from django.db.models import Q
 from django_filters import rest_framework as filters
 
-from product.models import Product
+from product.models import Category, Product, Subcategory
+
+
+class CategoryFilter(filters.FilterSet):
+    name = filters.CharFilter(lookup_expr="icontains")
+    search = filters.CharFilter(method="filter_search")
+
+    class Meta:
+        model = Category
+        fields = ["name", "search"]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(name__icontains=value)
+
+
+class SubcategoryFilter(filters.FilterSet):
+    name = filters.CharFilter(lookup_expr="icontains")
+    category = filters.CharFilter(field_name="category__slug")
+    search = filters.CharFilter(method="filter_search")
+
+    class Meta:
+        model = Subcategory
+        fields = ["name", "category", "search"]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(name__icontains=value) | Q(category__name__icontains=value)
+        )
 
 
 class ProductFilter(filters.FilterSet):
@@ -11,6 +42,7 @@ class ProductFilter(filters.FilterSet):
     sub_category = filters.CharFilter(field_name="sub_category__slug")
     is_best_seller = filters.BooleanFilter()
     offer = filters.CharFilter(method="filter_by_offer")
+    search = filters.CharFilter(method="filter_search")
 
     class Meta:
         model = Product
@@ -21,7 +53,15 @@ class ProductFilter(filters.FilterSet):
             "sub_category",
             "is_best_seller",
             "offer",
+            "search",
         ]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(name__icontains=value) | Q(description__icontains=value)
+        )
 
     def filter_by_offer(self, queryset, name, value):
         from offer.models import Offer

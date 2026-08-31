@@ -10,7 +10,7 @@ class Blog(BaseModel):
     slug = models.SlugField(unique=True, blank=True, null=True, db_index=True)
     image = models.FileField(upload_to="blog/images/", null=True, blank=True)
     time_to_read = models.IntegerField(null=True, blank=True, help_text="in minutes")
-    short_description = models.TextField()
+    short_description = models.TextField(null=True, blank=True)
     content = models.TextField()
     meta_title = models.CharField(max_length=255, null=True, blank=True)
     meta_description = models.TextField(null=True, blank=True)
