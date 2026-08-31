@@ -8,7 +8,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from blog.filters import BlogFilter
 from blog.models import Blog
-from blog.serializers import BlogSerializer
+from blog.serializers import BlogListSerializer, BlogSerializer
 from common.utils import CustomPagination
 
 
@@ -19,12 +19,16 @@ class BlogListCreateAPIView(ListCreateAPIView):
     """
 
     queryset = Blog.objects.all()
-    serializer_class = BlogSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = BlogFilter
     pagination_class = CustomPagination
 
     search_fields = ["title", "short_description", "content"]
+
+    def get_serializer_class(self):
+        if self.request.method == "GET":
+            return BlogListSerializer
+        return BlogSerializer
 
     def get_permissions(self):
         if self.request.method == "GET":
