@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django_filters import rest_framework as filters
 
 from order.models import Order
@@ -8,7 +9,17 @@ class OrderFilter(filters.FilterSet):
     branch = filters.NumberFilter(field_name="branch__id")
     customer_name = filters.CharFilter(lookup_expr="icontains")
     phone_number = filters.CharFilter(lookup_expr="icontains")
+    search = filters.CharFilter(method="filter_search")
 
     class Meta:
         model = Order
-        fields = ["status", "branch", "customer_name", "phone_number"]
+        fields = ["status", "branch", "customer_name", "phone_number", "search"]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(customer_name__icontains=value)
+            | Q(phone_number__icontains=value)
+            | Q(order_number__icontains=value)
+        )

@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
+from rest_framework.filters import SearchFilter
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.response import Response
 
@@ -22,9 +23,10 @@ class OrderListCreateAPIView(ListCreateAPIView):
         .order_by("-created_at")
     )
     serializer_class = OrderResponseSerializer
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = OrderFilter
     pagination_class = CustomPagination
+    search_fields = ["customer_name", "phone_number", "order_number"]
 
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
