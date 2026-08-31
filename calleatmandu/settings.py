@@ -37,6 +37,7 @@ ALLOWED_HOSTS = ["*"]
 
 # Application definition - registered order, offer, product, blog, contact, faq apps
 INSTALLED_APPS = [
+    "daphne",
     "unfold",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
     "allauth.headless",
+    "channels",
     "common",
     "account",
     "product",
@@ -63,6 +65,7 @@ INSTALLED_APPS = [
     "faq",
     "contact",
 ]
+
 
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -139,6 +142,14 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "calleatmandu.wsgi.application"
+ASGI_APPLICATION = "calleatmandu.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
+
 
 
 # Database

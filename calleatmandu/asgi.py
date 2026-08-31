@@ -9,8 +9,15 @@ https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
 
 import os
 
+from channels.routing import ProtocolTypeRouter
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'calleatmandu.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "calleatmandu.settings")
 
-application = get_asgi_application()
+django_asgi_app = get_asgi_application()
+
+application = ProtocolTypeRouter({
+    "http": django_asgi_app,
+    # WebSocket routing can be added here when notification channels are created:
+    # "websocket": AuthMiddlewareStack(URLRouter([...])),
+})
