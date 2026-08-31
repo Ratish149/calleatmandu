@@ -64,8 +64,8 @@ INSTALLED_APPS = [
     "blog",
     "faq",
     "contact",
+    "notification",
 ]
-
 
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -151,7 +151,6 @@ CHANNEL_LAYERS = {
 }
 
 
-
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
@@ -218,3 +217,4 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
+

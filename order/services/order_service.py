@@ -1,5 +1,6 @@
 from django.db import transaction
 
+from notification.services.notification_service import NotificationService
 from offer.models import Offer, OfferRedemption, PromoCode
 from offer.services.offer_service import OfferService
 from order.models import Order, OrderItem, OrderItemExtra
@@ -8,6 +9,8 @@ from product.models import Product, ProductExtra
 
 
 class OrderService:
+
+
     @classmethod
     @transaction.atomic
     def create_order(cls, user, order_data, cart_items_data):
@@ -173,4 +176,11 @@ class OrderService:
                 promo_code_obj.current_usage_count += 1
                 promo_code_obj.save(update_fields=["current_usage_count"])
 
+        # 9. Trigger notification after transaction commit
+        transaction.on_commit(
+            lambda: NotificationService.send_order_notification(order)
+        )
+
         return order
+
+
