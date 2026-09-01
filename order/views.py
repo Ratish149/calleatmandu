@@ -45,8 +45,11 @@ class OrderListCreateAPIView(ListCreateAPIView):
         user = self.request.user
 
         if user and user.is_authenticated:
-            # If user has an assigned branch, return orders belonging to that branch only
-            if getattr(user, "branch_id", None):
+            # If user is a rider, return orders assigned to this rider
+            if getattr(user, "role", None) == "rider":
+                queryset = queryset.filter(assigned_to_rider=user)
+            # If staff user has an assigned branch, return orders belonging to that branch only
+            elif getattr(user, "branch_id", None):
                 queryset = queryset.filter(branch_id=user.branch_id)
             elif not (
                 user.is_superuser
