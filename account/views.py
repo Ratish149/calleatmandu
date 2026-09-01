@@ -20,6 +20,7 @@ from account.serializers import (
     LoginSerializer,
     SignupSerializer,
     UserSerializer,
+    UserUpdateSerializer,
 )
 from account.services.auth_service import generate_tokens_for_user
 from account.services.social_auth_service import google_social_login_service
@@ -41,6 +42,20 @@ class UserListAPIView(ListAPIView):
     filterset_class = UserFilter
     search_fields = ["first_name", "last_name", "username", "email", "phone_number"]
     pagination_class = CustomPagination
+
+
+class UserRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, edit (PUT/PATCH), or delete a user instance by ID.
+    """
+
+    queryset = User.objects.select_related("branch")
+    permission_classes = [IsStaffOrOperationalRole]
+
+    def get_serializer_class(self):
+        if self.request.method in ["PUT", "PATCH"]:
+            return UserUpdateSerializer
+        return UserSerializer
 
 
 class SignupView(GenericAPIView):

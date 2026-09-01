@@ -6,6 +6,7 @@ from account.views import (
     LoginView,
     SignupView,
     UserListAPIView,
+    UserRetrieveUpdateDestroyAPIView,
 )
 
 urlpatterns = [
@@ -14,9 +15,12 @@ urlpatterns = [
     path("social/google/", GoogleLoginView.as_view(), name="google_login"),
     path("users/", UserListAPIView.as_view(), name="user-list"),
     path(
+        "users/<int:pk>/",
+        UserRetrieveUpdateDestroyAPIView.as_view(),
+        name="user-detail",
+    ),
+    path(
         "customers/", CustomerListCreateAPIView.as_view(), name="customer-list-create"
     ),
     path("headless/", include("allauth.headless.urls")),
 ]
-
-

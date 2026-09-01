@@ -34,6 +34,52 @@ class UserSerializer(serializers.ModelSerializer):
         return name if name else obj.username
 
 
+class UserUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating user details (first_name, last_name, email, phone_number, role, branch).
+    """
+
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "phone_number",
+            "role",
+            "branch",
+        )
+        read_only_fields = ("id",)
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
+
+    def validate_email(self, value):
+        if value:
+            user_id = self.instance.id if self.instance else None
+            if User.objects.filter(email__iexact=value).exclude(id=user_id).exists():
+                raise serializers.ValidationError(
+                    "A user with this email address already exists."
+                )
+        return value
+
+    def validate_phone_number(self, value):
+        if value:
+            user_id = self.instance.id if self.instance else None
+            if User.objects.filter(phone_number=value).exclude(id=user_id).exists():
+                raise serializers.ValidationError(
+                    "A user with this phone number already exists."
+                )
+        return value
+
+
+
 class SignupSerializer(serializers.Serializer):
     """
     Serializer for handling user registration with full_name, email, password, and optional phone_number.
