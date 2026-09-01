@@ -1,16 +1,21 @@
+from django.contrib.auth import get_user_model
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
+from rest_framework.filters import SearchFilter
 from rest_framework.generics import (
     GenericAPIView,
+    ListAPIView,
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from account.filters import BranchFilter
+from account.filters import BranchFilter, UserFilter
 from account.models import Branch
 from account.serializers import (
     BranchSerializer,
+    CustomerCreateSerializer,
     GoogleLoginSerializer,
     LoginSerializer,
     SignupSerializer,
@@ -18,6 +23,24 @@ from account.serializers import (
 )
 from account.services.auth_service import generate_tokens_for_user
 from account.services.social_auth_service import google_social_login_service
+from common.permissions import IsStaffOrOperationalRole
+from common.utils import CustomPagination
+
+User = get_user_model()
+
+
+class UserListAPIView(ListAPIView):
+    """
+    API view to list users with filtering by role and search.
+    """
+
+    queryset = User.objects.select_related("branch").order_by("-date_joined")
+    serializer_class = UserSerializer
+    permission_classes = [IsStaffOrOperationalRole]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = UserFilter
+    search_fields = ["first_name", "last_name", "username", "email", "phone_number"]
+    pagination_class = CustomPagination
 
 
 class SignupView(GenericAPIView):
@@ -98,6 +121,34 @@ class GoogleLoginView(GenericAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CustomerListCreateAPIView(ListCreateAPIView):
+    """
+    API view to list all customers or create a new customer using full_name & phone_number.
+    """
+
+    queryset = (
+        User.objects
+        .filter(role="customer")
+        .select_related("branch")
+        .order_by("-date_joined")
+    )
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    pagination_class = CustomPagination
+    search_fields = ["phone_number", "first_name", "last_name", "username"]
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return CustomerCreateSerializer
+        return UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = CustomerCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        customer = serializer.save()
+        response_serializer = UserSerializer(customer)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class BranchListCreateView(ListCreateAPIView):

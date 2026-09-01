@@ -14,6 +14,14 @@ def generate_order_number():
             return number
 
 
+def generate_barcode_number():
+    """Generate a unique 12-digit barcode number."""
+    while True:
+        number = "".join([str(random.randint(0, 9)) for _ in range(12)])
+        if not Order.objects.filter(barcode_number=number).exists():
+            return number
+
+
 class Order(BaseModel):
     class OrderStatus(models.TextChoices):
         PENDING = "PENDING", "Pending"
@@ -74,12 +82,35 @@ class Order(BaseModel):
         db_index=True,
         help_text="Human-readable order ID, e.g. EAT_482931",
     )
+    barcode_number = models.CharField(
+        max_length=20,
+        unique=True,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Unique barcode number for scanning, e.g. 890123456789",
+    )
+    is_pos_order = models.BooleanField(default=False)
 
     status = models.CharField(
         max_length=30,
         choices=OrderStatus.choices,
         default=OrderStatus.PENDING,
         db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_by",
+    )
+    assigned_to_rider = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_to_rider",
     )
 
     class Meta:
@@ -92,6 +123,8 @@ class Order(BaseModel):
     def save(self, *args, **kwargs):
         if not self.order_number:
             self.order_number = generate_order_number()
+        if not self.barcode_number:
+            self.barcode_number = generate_barcode_number()
         super().save(*args, **kwargs)
 
     def __str__(self):

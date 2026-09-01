@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "faq",
     "contact",
     "notification",
+    "nps_payment",
 ]
 
 
@@ -76,14 +77,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://additionally-buf-simon-null.trycloudflare.com",
+    "https://warming-ltd-researcher-mission.trycloudflare.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://additionally-buf-simon-null.trycloudflare.com",
+    "https://warming-ltd-researcher-mission.trycloudflare.com",
 ]
 
 MIDDLEWARE = [
@@ -217,4 +218,3 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
-

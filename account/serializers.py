@@ -136,7 +136,53 @@ class GoogleLoginSerializer(serializers.Serializer):
         return attrs
 
 
+class CustomerCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a customer using only full_name and phone_number.
+    Does not require email or password.
+    """
+
+    full_name = serializers.CharField(max_length=255, required=True)
+    phone_number = serializers.CharField(max_length=20, required=True)
+
+    def validate_phone_number(self, value):
+        if value:
+            if User.objects.filter(phone_number=value).exists():
+                raise serializers.ValidationError(
+                    "A customer with this phone number already exists."
+                )
+        return value
+
+    def create(self, validated_data):
+        full_name = validated_data["full_name"]
+        phone_number = validated_data["phone_number"]
+
+        names = full_name.strip().split(" ", 1)
+        first_name = names[0]
+        last_name = names[1] if len(names) > 1 else ""
+
+        # Generate a unique username from phone number or name
+        base_username = phone_number if phone_number else f"cust_{first_name.lower()}"
+        username = base_username
+        counter = 1
+        while User.objects.filter(username__iexact=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        user = User(
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            role="customer",
+        )
+        user.set_unusable_password()
+        user.save()
+        return user
+
+
 class BranchSerializer(serializers.ModelSerializer):
+
     """
     Serializer representing the Branch details.
     """
@@ -158,3 +204,4 @@ class BranchSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "slug", "created_at", "updated_at")
+

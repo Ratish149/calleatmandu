@@ -103,6 +103,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
     image = serializers.FileField(source="thumbnail_image", read_only=True)
     offer_price = serializers.SerializerMethodField()
+    extras = ProductExtraSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -117,6 +118,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "is_best_seller",
             "type",
             "image",
+            "extras",
         ]
 
     def get_offer_price(self, obj):
