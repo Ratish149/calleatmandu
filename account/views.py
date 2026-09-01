@@ -8,13 +8,14 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from account.filters import BranchFilter, UserFilter
 from account.models import Branch
 from account.serializers import (
     BranchSerializer,
+    ChangePasswordSerializer,
     CustomerCreateSerializer,
     GoogleLoginSerializer,
     LoginSerializer,
@@ -106,6 +107,28 @@ class LoginView(GenericAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ChangePasswordView(GenericAPIView):
+    """
+    API view for an authenticated user to change password using token.
+    Requires old_password, new_password, and confirm_password.
+    """
+
+    serializer_class = ChangePasswordSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"message": "Password changed successfully."},
+            status=status.HTTP_200_OK,
+        )
+
 
 
 class GoogleLoginView(GenericAPIView):

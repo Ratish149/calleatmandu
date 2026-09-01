@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from account.views import (
+    ChangePasswordView,
     CustomerListCreateAPIView,
     GoogleLoginView,
     LoginView,
@@ -12,6 +13,7 @@ from account.views import (
 urlpatterns = [
     path("signup/", SignupView.as_view(), name="signup"),
     path("login/", LoginView.as_view(), name="login"),
+    path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path("social/google/", GoogleLoginView.as_view(), name="google_login"),
     path("users/", UserListAPIView.as_view(), name="user-list"),
     path(
@@ -24,3 +26,4 @@ urlpatterns = [
     ),
     path("headless/", include("allauth.headless.urls")),
 ]
+
