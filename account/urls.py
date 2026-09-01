@@ -26,4 +26,3 @@ urlpatterns = [
     ),
     path("headless/", include("allauth.headless.urls")),
 ]
-
