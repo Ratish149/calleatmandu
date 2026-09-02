@@ -137,6 +137,7 @@ class OrderService:
             total_amount=total_amount,
             offer=offer_obj,
             promo_code=promo_code_obj,
+            payment_type=order_data.get("payment_type", Order.PaymentType.COD),
         )
 
         # 7. Create OrderItem records then bulk-create extras
@@ -336,6 +337,7 @@ class OrderService:
             offer=offer_obj,
             promo_code=promo_code_obj,
             is_pos_order=True,
+            payment_type=order_data.get("payment_type", Order.PaymentType.COD),
             status=Order.OrderStatus.CONFIRMED,
         )
 

@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from orders.models import Order
+from order.models import Order
 
 from .filters import NPSTransactionFilterSet
 from .models import NPSConfig, NPSTransaction
@@ -30,6 +30,9 @@ from .services import (
 
 def _update_order_on_success(order, merchant_txn_id):
     if not order:
+        print(
+            f"[NPS Order Update] No order linked to transaction {merchant_txn_id}. Skipping order update."
+        )
         return
     update_fields = []
     if hasattr(order, "is_paid"):
@@ -46,6 +49,9 @@ def _update_order_on_success(order, merchant_txn_id):
         update_fields.append("transaction_id")
     if update_fields:
         order.save(update_fields=update_fields)
+        print(
+            f"[NPS Order Update] Updated Order #{order.id} with fields {update_fields}."
+        )
 
 
 class CustomPagination(PageNumberPagination):
@@ -55,13 +61,13 @@ class CustomPagination(PageNumberPagination):
 
 
 class NPSConfigListCreateAPIView(generics.ListCreateAPIView):
-    queryset = NPSConfig.objects.select_related("franchise").all()
+    queryset = NPSConfig.objects.all()
     serializer_class = NPSConfigSerializer
     permission_classes = [IsAuthenticated]
 
 
 class NPSConfigRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = NPSConfig.objects.select_related("franchise").all()
+    queryset = NPSConfig.objects.all()
     serializer_class = NPSConfigSerializer
     permission_classes = [IsAuthenticated]
 
@@ -70,17 +76,11 @@ class NPSStatusAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        franchise_slug = request.query_params.get(
-            "franchise"
-        ) or request.query_params.get("franchise_slug")
-        config = get_nps_config(
-            franchise_identifier=franchise_slug, raise_exception=False
-        )
+        config = get_nps_config(raise_exception=False)
         is_enabled = bool(config and config.is_enabled)
         return Response(
             {
                 "is_enabled": is_enabled,
-                "franchise": franchise_slug,
             },
             status=status.HTTP_200_OK,
         )
@@ -90,10 +90,7 @@ class NPSInstrumentsAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        franchise_slug = request.query_params.get(
-            "franchise"
-        ) or request.query_params.get("franchise_slug")
-        config = get_nps_config(franchise_identifier=franchise_slug)
+        config = get_nps_config()
         try:
             res_data = fetch_payment_instruments(config)
             return Response(res_data, status=status.HTTP_200_OK)
@@ -111,8 +108,7 @@ class NPSServiceChargeAPIView(APIView):
         serializer = NPSServiceChargeQuerySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        franchise_slug = serializer.validated_data.get("franchise")
-        config = get_nps_config(franchise_identifier=franchise_slug)
+        config = get_nps_config()
 
         amount = serializer.validated_data["amount"]
         instrument_code = serializer.validated_data["instrument_code"]
@@ -139,20 +135,17 @@ class NPSInitiatePaymentAPIView(APIView):
         remarks = serializer.validated_data.get("remarks", "")
         instrument_code = serializer.validated_data.get("instrument_code", "")
         response_url = serializer.validated_data.get("response_url", "")
-        franchise_slug = serializer.validated_data.get("franchise")
 
         order = None
         if order_id:
-            order = (
-                Order.objects.filter(id=order_id).select_related("franchise").first()
-            )
+            order = Order.objects.filter(id=order_id).first()
             if not order:
                 return Response(
                     {"detail": f"Order with ID {order_id} not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-        config = get_nps_config(franchise_identifier=franchise_slug, order=order)
+        config = get_nps_config()
 
         merchant_txn_id = generate_merchant_txn_id()
 
@@ -230,7 +223,7 @@ class NPSWebhookListenerAPIView(APIView):
         txn = (
             NPSTransaction.objects
             .filter(merchant_txn_id=merchant_txn_id)
-            .select_related("order__franchise")
+            .select_related("order")
             .first()
         )
         if not txn:
@@ -239,7 +232,7 @@ class NPSWebhookListenerAPIView(APIView):
         if txn.webhook_received_at is not None and txn.status.lower() == "success":
             return HttpResponse("already received", status=200)
 
-        config = get_nps_config(order=txn.order)
+        config = get_nps_config()
 
         # Server-to-server check status verification
         success, status_res = verify_transaction_status(config, merchant_txn_id)
@@ -306,7 +299,7 @@ class NPSVerifyTransactionAPIView(APIView):
         txn = (
             NPSTransaction.objects
             .filter(merchant_txn_id=merchant_txn_id)
-            .select_related("order__franchise")
+            .select_related("order")
             .first()
         )
         if not txn:
@@ -315,10 +308,7 @@ class NPSVerifyTransactionAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        franchise_slug = request.query_params.get(
-            "franchise"
-        ) or request.query_params.get("franchise_slug")
-        config = get_nps_config(franchise_identifier=franchise_slug, order=txn.order)
+        config = get_nps_config()
 
         query_gateway_txn_id = (
             request.query_params.get("gateway_txn_id")
@@ -327,10 +317,14 @@ class NPSVerifyTransactionAPIView(APIView):
         )
 
         # Refresh transaction status from NPS
+        print(
+            f"\n[NPS Verify API] Verifying status for MerchantTxnId: {merchant_txn_id}"
+        )
         success, status_res = verify_transaction_status(config, merchant_txn_id)
         if success and status_res.get("data"):
             data = status_res["data"]
             txn_status = data.get("Status", "Fail")
+            print(f"[NPS Verify API] Gateway returned Status: '{txn_status}'")
             txn.status = txn_status
             txn.institution = data.get("Institution", "")
             txn.instrument = data.get("Instrument", "")
@@ -363,7 +357,14 @@ class NPSVerifyTransactionAPIView(APIView):
 
             if str(txn_status).strip().lower() in ["success", "0"]:
                 txn.status = "Success"
+                print(
+                    "[NPS Verify API] Transaction succeeded! Updating order status..."
+                )
                 _update_order_on_success(txn.order, merchant_txn_id)
+            else:
+                print(
+                    f"[NPS Verify API] Transaction did NOT succeed. Status remains: '{txn.status}'"
+                )
 
             txn.save()
         elif query_gateway_txn_id and not txn.gateway_txn_id:

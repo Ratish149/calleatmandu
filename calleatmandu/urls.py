@@ -30,6 +30,7 @@ urlpatterns = (
         path("api/", include("blog.urls")),
         path("api/", include("faq.urls")),
         path("api/", include("contact.urls")),
+        path("api/", include("nps_payment.urls")),
     ]
     + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

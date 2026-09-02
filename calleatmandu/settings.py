@@ -77,14 +77,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://warming-ltd-researcher-mission.trycloudflare.com",
+    "https://preparation-cornwall-know-yards.trycloudflare.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://warming-ltd-researcher-mission.trycloudflare.com",
+    "https://preparation-cornwall-know-yards.trycloudflare.com",
 ]
 
 MIDDLEWARE = [

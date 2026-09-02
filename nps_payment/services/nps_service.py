@@ -149,11 +149,27 @@ def verify_transaction_status(
     payload["Signature"] = generate_hmac_sha512(payload, config.secret_key)
     headers = get_basic_auth_header(config.api_username, config.api_password)
 
-    response = requests.post(url, json=payload, headers=headers, timeout=15)
-    res_data = response.json()
+    print("\n================ [NPS CheckTransactionStatus Request] ================")
+    print(f"Target API URL: {url}")
+    print(f"MerchantTxnId: {merchant_txn_id}")
+    print(f"Payload: {payload}")
 
-    success = res_data.get("code") == "0"
-    return success, res_data
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        print(f"HTTP Status: {response.status_code}")
+        print(f"Raw Response: {response.text}")
+        res_data = response.json()
+        success = str(res_data.get("code")) == "0"
+        print(f"API Call Result (code == '0'): {success}")
+        if success and isinstance(res_data.get("data"), dict):
+            inner_status = res_data["data"].get("Status")
+            print(f"Inner Gateway Transaction Status: '{inner_status}'")
+        print("======================================================================\n")
+        return success, res_data
+    except Exception as e:
+        print(f"Connection Exception on {url}: {e}")
+        print("======================================================================\n")
+        raise e
 
 
 def build_gateway_form_payload(

@@ -23,12 +23,22 @@ class OrderAdmin(ModelAdmin):
         "customer_name",
         "phone_number",
         "branch",
+        "payment_type",
+        "is_paid",
         "status",
         "total_amount",
+        "transaction_id",
+        "barcode_number",
         "created_at",
     ]
-    list_filter = ["status", "branch", "created_at"]
-    search_fields = ["order_number", "customer_name", "phone_number", "delivery_location"]
+    list_filter = ["status", "payment_type", "is_paid", "branch", "created_at"]
+    search_fields = [
+        "order_number",
+        "transaction_id",
+        "customer_name",
+        "phone_number",
+        "delivery_location",
+    ]
     inlines = [OrderItemInline]
     ordering = ["-created_at"]
 

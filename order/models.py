@@ -31,6 +31,10 @@ class Order(BaseModel):
         DELIVERED = "DELIVERED", "Delivered"
         CANCELLED = "CANCELLED", "Cancelled"
 
+    class PaymentType(models.TextChoices):
+        COD = "COD", "Cash on Delivery"
+        NPS = "NPS", "NPS Payment"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -73,6 +77,24 @@ class Order(BaseModel):
         null=True,
         blank=True,
         related_name="orders",
+    )
+
+    # Payment Info
+    payment_type = models.CharField(
+        max_length=20,
+        choices=PaymentType.choices,
+        default=PaymentType.COD,
+        db_index=True,
+    )
+    transaction_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+    is_paid = models.BooleanField(
+        default=False,
+        db_index=True,
     )
 
     order_number = models.CharField(
@@ -118,6 +140,7 @@ class Order(BaseModel):
             models.Index(fields=["status", "created_at"]),
             models.Index(fields=["branch", "status"]),
             models.Index(fields=["latitude", "longitude"]),
+            models.Index(fields=["payment_type", "is_paid"]),
         ]
 
     def save(self, *args, **kwargs):

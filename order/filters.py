@@ -6,6 +6,9 @@ from order.models import Order
 
 class OrderFilter(filters.FilterSet):
     status = filters.ChoiceFilter(choices=Order.OrderStatus.choices)
+    payment_type = filters.ChoiceFilter(choices=Order.PaymentType.choices)
+    is_paid = filters.BooleanFilter()
+    transaction_id = filters.CharFilter(lookup_expr="exact")
     branch = filters.NumberFilter(field_name="branch__id")
     assigned_to_rider = filters.NumberFilter(field_name="assigned_to_rider__id")
     barcode_number = filters.CharFilter(lookup_expr="exact")
@@ -17,6 +20,9 @@ class OrderFilter(filters.FilterSet):
         model = Order
         fields = [
             "status",
+            "payment_type",
+            "is_paid",
+            "transaction_id",
             "branch",
             "assigned_to_rider",
             "barcode_number",
@@ -33,4 +39,5 @@ class OrderFilter(filters.FilterSet):
             | Q(phone_number__icontains=value)
             | Q(order_number__icontains=value)
             | Q(barcode_number__icontains=value)
+            | Q(transaction_id__icontains=value)
         )

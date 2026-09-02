@@ -32,13 +32,11 @@ class NPSInitiatePaymentSerializer(serializers.Serializer):
         max_length=100, required=False, allow_blank=True
     )
     response_url = serializers.URLField(required=False, allow_blank=True)
-    franchise = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class NPSServiceChargeQuerySerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     instrument_code = serializers.CharField(max_length=100)
-    franchise = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class NPSTransactionSerializer(serializers.ModelSerializer):

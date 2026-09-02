@@ -70,6 +70,11 @@ class OrderCreateSerializer(serializers.Serializer):
     promo_code = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
+    payment_type = serializers.ChoiceField(
+        choices=Order.PaymentType.choices,
+        default=Order.PaymentType.COD,
+        required=False,
+    )
     items = OrderItemCreateSerializer(many=True, min_length=1)
 
 
@@ -95,6 +100,11 @@ class POSOrderCreateSerializer(serializers.Serializer):
     special_note = serializers.CharField(required=False, allow_blank=True, default="")
     promo_code = serializers.CharField(
         required=False, allow_blank=True, allow_null=True, default=None
+    )
+    payment_type = serializers.ChoiceField(
+        choices=Order.PaymentType.choices,
+        default=Order.PaymentType.COD,
+        required=False,
     )
     items = OrderItemCreateSerializer(many=True, min_length=1)
 
@@ -126,6 +136,9 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "delivery_fee",
             "total_amount",
             "discount_amount",
+            "payment_type",
+            "transaction_id",
+            "is_paid",
             "status",
             "is_pos_order",
             "created_by",
@@ -179,6 +192,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_amount",
             "promo_code",
             "offer",
+            "payment_type",
+            "transaction_id",
+            "is_paid",
             "is_pos_order",
             "status",
             "created_by",
