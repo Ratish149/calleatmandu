@@ -75,6 +75,10 @@ class OrderCreateSerializer(serializers.Serializer):
         default=Order.PaymentType.COD,
         required=False,
     )
+    transaction_id = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True, min_length=1)
 
 
@@ -106,6 +110,10 @@ class POSOrderCreateSerializer(serializers.Serializer):
         default=Order.PaymentType.COD,
         required=False,
     )
+    transaction_id = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True, min_length=1)
 
 

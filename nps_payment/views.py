@@ -29,6 +29,9 @@ from .services import (
 
 
 def _update_order_on_success(order, merchant_txn_id):
+    if not order and merchant_txn_id:
+        order = Order.objects.filter(transaction_id=merchant_txn_id).first()
+
     if not order:
         print(
             f"[NPS Order Update] No order linked to transaction {merchant_txn_id}. Skipping order update."
@@ -38,11 +41,14 @@ def _update_order_on_success(order, merchant_txn_id):
     if hasattr(order, "is_paid"):
         order.is_paid = True
         update_fields.append("is_paid")
+    if hasattr(order, "payment_type"):
+        order.payment_type = "NPS"
+        update_fields.append("payment_type")
     if hasattr(order, "order_status"):
-        order.order_status = "Confirmed"
+        order.order_status = "CONFIRMED"
         update_fields.append("order_status")
     elif hasattr(order, "status"):
-        order.status = "Confirmed"
+        order.status = "CONFIRMED"
         update_fields.append("status")
     if hasattr(order, "transaction_id"):
         order.transaction_id = merchant_txn_id
@@ -50,7 +56,7 @@ def _update_order_on_success(order, merchant_txn_id):
     if update_fields:
         order.save(update_fields=update_fields)
         print(
-            f"[NPS Order Update] Updated Order #{order.id} with fields {update_fields}."
+            f"[NPS Order Update] Updated Order #{order.id} ({order.order_number}) with fields {update_fields}."
         )
 
 
@@ -138,16 +144,25 @@ class NPSInitiatePaymentAPIView(APIView):
 
         order = None
         if order_id:
-            order = Order.objects.filter(id=order_id).first()
+            order_id_str = str(order_id).strip()
+            if order_id_str.isdigit():
+                order = Order.objects.filter(id=int(order_id_str)).first()
+            if not order:
+                order = Order.objects.filter(order_number=order_id_str).first()
             if not order:
                 return Response(
-                    {"detail": f"Order with ID {order_id} not found."},
+                    {"detail": f"Order '{order_id}' not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
         config = get_nps_config()
 
         merchant_txn_id = generate_merchant_txn_id()
+
+        if order:
+            order.transaction_id = merchant_txn_id
+            order.payment_type = "NPS"
+            order.save(update_fields=["transaction_id", "payment_type"])
 
         # Step 1: Call GetProcessId from NPS
         try:
@@ -266,10 +281,19 @@ class NPSWebhookListenerAPIView(APIView):
             order_id = request.query_params.get("order_id") or request.query_params.get(
                 "order"
             )
-            if not txn.order and order_id:
-                order_obj = Order.objects.filter(id=order_id).first()
+            if not txn.order:
+                order_obj = Order.objects.filter(transaction_id=merchant_txn_id).first()
+                if not order_obj and order_id:
+                    order_id_str = str(order_id).strip()
+                    if order_id_str.isdigit():
+                        order_obj = Order.objects.filter(id=int(order_id_str)).first()
+                    else:
+                        order_obj = Order.objects.filter(
+                            order_number=order_id_str
+                        ).first()
                 if order_obj:
                     txn.order = order_obj
+                    txn.save(update_fields=["order"])
 
             if str(txn_status).strip().lower() in ["success", "0"]:
                 txn.status = "Success"
@@ -350,10 +374,19 @@ class NPSVerifyTransactionAPIView(APIView):
             order_id = request.query_params.get("order_id") or request.query_params.get(
                 "order"
             )
-            if not txn.order and order_id:
-                order_obj = Order.objects.filter(id=order_id).first()
+            if not txn.order:
+                order_obj = Order.objects.filter(transaction_id=merchant_txn_id).first()
+                if not order_obj and order_id:
+                    order_id_str = str(order_id).strip()
+                    if order_id_str.isdigit():
+                        order_obj = Order.objects.filter(id=int(order_id_str)).first()
+                    else:
+                        order_obj = Order.objects.filter(
+                            order_number=order_id_str
+                        ).first()
                 if order_obj:
                     txn.order = order_obj
+                    txn.save(update_fields=["order"])
 
             if str(txn_status).strip().lower() in ["success", "0"]:
                 txn.status = "Success"

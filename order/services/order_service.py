@@ -138,7 +138,24 @@ class OrderService:
             offer=offer_obj,
             promo_code=promo_code_obj,
             payment_type=order_data.get("payment_type", Order.PaymentType.COD),
+            transaction_id=order_data.get("transaction_id"),
+            is_paid=order_data.get("is_paid", False),
         )
+
+        # 6b. Automatically link NPSTransaction if transaction_id is provided
+        tx_id = order_data.get("transaction_id")
+        if tx_id:
+            from nps_payment.models import NPSTransaction
+
+            nps_txn = NPSTransaction.objects.filter(merchant_txn_id=tx_id).first()
+            if nps_txn:
+                nps_txn.order = order
+                nps_txn.save(update_fields=["order"])
+                if nps_txn.status == "Success":
+                    order.is_paid = True
+                    order.status = Order.OrderStatus.CONFIRMED
+                    order.payment_type = Order.PaymentType.NPS
+                    order.save(update_fields=["is_paid", "status", "payment_type"])
 
         # 7. Create OrderItem records then bulk-create extras
         for item in processed_items:
@@ -338,8 +355,23 @@ class OrderService:
             promo_code=promo_code_obj,
             is_pos_order=True,
             payment_type=order_data.get("payment_type", Order.PaymentType.COD),
+            transaction_id=order_data.get("transaction_id"),
+            is_paid=order_data.get("is_paid", False),
             status=Order.OrderStatus.CONFIRMED,
         )
+
+        tx_id = order_data.get("transaction_id")
+        if tx_id:
+            from nps_payment.models import NPSTransaction
+
+            nps_txn = NPSTransaction.objects.filter(merchant_txn_id=tx_id).first()
+            if nps_txn:
+                nps_txn.order = order
+                nps_txn.save(update_fields=["order"])
+                if nps_txn.status == "Success":
+                    order.is_paid = True
+                    order.payment_type = Order.PaymentType.NPS
+                    order.save(update_fields=["is_paid", "payment_type"])
 
         # Create items and extras
         for item in processed_items:
