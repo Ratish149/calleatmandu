@@ -28,8 +28,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy project code
 COPY . .
 
-# Create media and static directories
-RUN mkdir -p /app/media /app/static
+# Create media and static directories and collect static files
+RUN mkdir -p /app/media /app/static && \
+    python manage.py collectstatic --noinput
 
 # Expose port
 EXPOSE 8000

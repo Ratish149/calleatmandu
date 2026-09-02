@@ -40,4 +40,5 @@ types-PyYAML==6.0.12.20260815
 typing_extensions==4.16.0
 ujson==5.13.0
 urllib3==2.7.0
+whitenoise==6.9.0
 zope.interface==8.6
