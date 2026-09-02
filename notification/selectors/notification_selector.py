@@ -11,52 +11,32 @@ class NotificationSelector:
     """
 
     @staticmethod
-    def get_user_notifications(user) -> QuerySet[Notification]:
+    def get_all_notifications() -> QuerySet[Notification]:
         """
-        Returns notifications belonging to the specified user or global notifications.
-        Optimized using select_related.
+        Returns all system notifications optimized with .only().
         """
-        if not user or not user.is_authenticated:
-            return Notification.objects.none()
-
-        return (
-            Notification.objects.filter(user=user)
-            .select_related("user")
-            .only(
-                "id",
-                "user_id",
-                "title",
-                "message",
-                "notification_type",
-                "data",
-                "is_read",
-                "read_at",
-                "created_at",
-                "updated_at",
-                "user__id",
-                "user__username",
-                "user__email",
-            )
+        return Notification.objects.only(
+            "id",
+            "title",
+            "message",
+            "notification_type",
+            "data",
+            "is_read",
+            "read_at",
+            "created_at",
+            "updated_at",
         )
 
     @staticmethod
-    def get_unread_count(user) -> int:
+    def get_unread_count() -> int:
         """
-        Returns total count of unread notifications for a user.
+        Returns total count of unread notifications.
         """
-        if not user or not user.is_authenticated:
-            return 0
-        return Notification.objects.filter(user=user, is_read=False).count()
+        return Notification.objects.filter(is_read=False).count()
 
     @staticmethod
-    def get_notification_by_id(user, notification_id: int) -> Optional[Notification]:
+    def get_notification_by_id(notification_id: int) -> Optional[Notification]:
         """
-        Fetches a single notification belonging to the specified user by ID.
+        Fetches a single notification by ID.
         """
-        if not user or not user.is_authenticated:
-            return None
-        return (
-            Notification.objects.filter(id=notification_id, user=user)
-            .select_related("user")
-            .first()
-        )
+        return Notification.objects.filter(id=notification_id).first()

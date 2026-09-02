@@ -46,7 +46,6 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = [
             "id",
-            "user",
             "title",
             "message",
             "notification_type",
@@ -79,7 +78,7 @@ class MarkNotificationReadSerializer(serializers.Serializer):
     mark_all = serializers.BooleanField(
         required=False,
         default=False,
-        help_text="Set to True to mark all notifications as read for the user",
+        help_text="Set to True to mark all notifications as read",
     )
 
     def validate(self, attrs):

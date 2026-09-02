@@ -451,7 +451,6 @@ class OrderService:
         # Trigger notification creation and WebSocket push
         transaction.on_commit(
             lambda: NotificationService.create_notification(
-                user=order.user,
                 title=f"Order #{order.order_number} Out for Delivery",
                 message=f"Rider {rider.username if rider else ''} has been assigned to your order.",
                 notification_type="rider_assigned",

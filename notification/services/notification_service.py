@@ -21,7 +21,6 @@ class NotificationService:
     @classmethod
     def create_notification(
         cls,
-        user=None,
         title: str = "",
         message: str = "",
         notification_type: str = "order_update",
@@ -34,7 +33,6 @@ class NotificationService:
             data = {}
 
         notification = Notification.objects.create(
-            user=user,
             title=title,
             message=message,
             notification_type=notification_type,
@@ -64,7 +62,9 @@ class NotificationService:
                         "created_at": notification.created_at.isoformat(),
                     },
                 }
-                async_to_sync(channel_layer.group_send)("order_notifications", payload)
+                async_to_sync(channel_layer.group_send)(
+                    "order_notifications", payload
+                )
                 logger.info(
                     "Broadcasted notification ID %s via WebSocket", notification.id
                 )
@@ -80,15 +80,14 @@ class NotificationService:
     @classmethod
     def send_order_notification(cls, order) -> bool:
         """
-        Broadcasts order notification over WebSocket and persists Notification record if user associated.
+        Broadcasts order notification over WebSocket and persists Notification record in database.
         """
         order_data = OrderNotificationSerializer(order).data
         title = f"New Order #{order.order_number}"
         message = f"Order of Rs. {order.total_amount} placed by {order.customer_name}"
 
-        # Persist notification in database
+        # Persist notification in database & broadcast via WebSocket
         notification = cls.create_notification(
-            user=order.user if hasattr(order, "user") else None,
             title=title,
             message=message,
             notification_type="order_placed",
@@ -99,19 +98,15 @@ class NotificationService:
     @classmethod
     def mark_notifications_as_read(
         cls,
-        user,
         notification_id: Optional[int] = None,
         notification_ids: Optional[List[int]] = None,
         mark_all: bool = False,
     ) -> Tuple[int, int]:
         """
-        Marks single notification, multiple notifications, or all notifications as read for a user.
+        Marks single notification, multiple notifications, or all notifications as read.
         Returns a tuple of (updated_count, unread_count).
         """
-        if not user or not user.is_authenticated:
-            return 0, 0
-
-        qs = Notification.objects.filter(user=user, is_read=False)
+        qs = Notification.objects.filter(is_read=False)
 
         if mark_all:
             # Mark all unread notifications as read
@@ -129,5 +124,5 @@ class NotificationService:
         else:
             updated_count = 0
 
-        unread_count = NotificationSelector.get_unread_count(user)
+        unread_count = NotificationSelector.get_unread_count()
         return updated_count, unread_count
