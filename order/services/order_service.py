@@ -447,4 +447,20 @@ class OrderService:
             order.status = Order.OrderStatus.OUT_FOR_DELIVERY
 
         order.save(update_fields=["assigned_to_rider", "status", "updated_at"])
+
+        # Trigger notification creation and WebSocket push
+        transaction.on_commit(
+            lambda: NotificationService.create_notification(
+                user=order.user,
+                title=f"Order #{order.order_number} Out for Delivery",
+                message=f"Rider {rider.username if rider else ''} has been assigned to your order.",
+                notification_type="rider_assigned",
+                data={
+                    "order_number": order.order_number,
+                    "status": order.status,
+                    "rider_id": rider.id if rider else None,
+                },
+            )
+        )
+
         return order

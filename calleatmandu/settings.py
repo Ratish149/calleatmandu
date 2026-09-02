@@ -77,16 +77,16 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://preparation-cornwall-know-yards.trycloudflare.com",
-    "https://calleatmandu.baliyotech.com",
+    "https://multimedia-comments-fact-dating.trycloudflare.com",
+    "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://preparation-cornwall-know-yards.trycloudflare.com",
-    "https://calleatmandu.baliyotech.com",
+    "https://multimedia-comments-fact-dating.trycloudflare.com",
+    "https://calleatmanduapi.baliyotech.com",
 ]
 
 MIDDLEWARE = [
