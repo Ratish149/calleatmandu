@@ -78,6 +78,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
     "https://preparation-cornwall-know-yards.trycloudflare.com",
+    "https://calleatmandu.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
@@ -85,6 +86,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
     "https://preparation-cornwall-know-yards.trycloudflare.com",
+    "https://calleatmandu.baliyotech.com",
 ]
 
 MIDDLEWARE = [
