@@ -1,3 +1,5 @@
+import logging
+
 from django.http import HttpResponse
 from django.utils.timezone import now
 from django_filters import rest_framework as django_filters
@@ -26,6 +28,8 @@ from .services import (
     get_process_id,
     verify_transaction_status,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _update_order_on_success(order, merchant_txn_id):
@@ -222,17 +226,47 @@ class NPSInitiatePaymentAPIView(APIView):
 class NPSWebhookListenerAPIView(APIView):
     permission_classes = [AllowAny]
 
-    def get(self, request, *args, **kwargs):
+    def _handle_webhook(self, request, *args, **kwargs):
+        method = request.method
+        query_params = dict(request.query_params)
+        body_data = getattr(request, "data", {})
+
+        print(
+            f"\n[NPS Webhook Listener] [{method}] Incoming webhook request:\n"
+            f"  QueryParams: {query_params}\n"
+            f"  BodyData: {body_data}",
+            flush=True,
+        )
+        logger.info(
+            f"[NPS Webhook Listener] [{method}] Incoming request: query_params={query_params}, body_data={body_data}"
+        )
+
         merchant_txn_id = request.query_params.get(
             "MerchantTxnId"
         ) or request.query_params.get("merchant_txn_id")
+        if not merchant_txn_id and isinstance(body_data, dict):
+            merchant_txn_id = body_data.get("MerchantTxnId") or body_data.get(
+                "merchant_txn_id"
+            )
+
         gateway_txn_id = (
             request.query_params.get("GatewayTxnId")
             or request.query_params.get("gateway_txn_id")
             or request.query_params.get("GatewayReferenceNo")
         )
+        if not gateway_txn_id and isinstance(body_data, dict):
+            gateway_txn_id = (
+                body_data.get("GatewayTxnId")
+                or body_data.get("gateway_txn_id")
+                or body_data.get("GatewayReferenceNo")
+            )
 
         if not merchant_txn_id:
+            print(
+                f"[NPS Webhook Listener] Error: merchant_txn_id not provided. QueryParams: {query_params}, BodyData: {body_data}",
+                flush=True,
+            )
+            logger.warning("[NPS Webhook Listener] Missing merchant_txn_id")
             return HttpResponse("invalid request", status=400)
 
         txn = (
@@ -242,17 +276,50 @@ class NPSWebhookListenerAPIView(APIView):
             .first()
         )
         if not txn:
+            print(
+                f"[NPS Webhook Listener] Error: Transaction not found for merchant_txn_id: '{merchant_txn_id}'",
+                flush=True,
+            )
+            logger.warning(
+                f"[NPS Webhook Listener] Transaction not found for merchant_txn_id: '{merchant_txn_id}'"
+            )
             return HttpResponse("transaction not found", status=404)
 
+        print(
+            f"[NPS Webhook Listener] Found transaction #{txn.id} for merchant_txn_id: '{merchant_txn_id}', current_status='{txn.status}'",
+            flush=True,
+        )
+
         if txn.webhook_received_at is not None and txn.status.lower() == "success":
+            print(
+                f"[NPS Webhook Listener] Webhook already received & processed successfully for merchant_txn_id: '{merchant_txn_id}'.",
+                flush=True,
+            )
+            logger.info(
+                f"[NPS Webhook Listener] Already processed transaction '{merchant_txn_id}'"
+            )
             return HttpResponse("already received", status=200)
 
         config = get_nps_config()
 
         # Server-to-server check status verification
+        print(
+            f"[NPS Webhook Listener] Calling verify_transaction_status API for merchant_txn_id: '{merchant_txn_id}'...",
+            flush=True,
+        )
         success, status_res = verify_transaction_status(config, merchant_txn_id)
         txn.webhook_received_at = now()
         txn.raw_response = status_res
+
+        print(
+            f"[NPS Webhook Listener] API Response from verify_transaction_status:\n"
+            f"  Success: {success}\n"
+            f"  StatusRes: {status_res}",
+            flush=True,
+        )
+        logger.info(
+            f"[NPS Webhook Listener] API Response for '{merchant_txn_id}': success={success}, status_res={status_res}"
+        )
 
         if success and status_res.get("data"):
             data = status_res["data"]
@@ -281,6 +348,9 @@ class NPSWebhookListenerAPIView(APIView):
             order_id = request.query_params.get("order_id") or request.query_params.get(
                 "order"
             )
+            if not order_id and isinstance(body_data, dict):
+                order_id = body_data.get("order_id") or body_data.get("order")
+
             if not txn.order:
                 order_obj = Order.objects.filter(transaction_id=merchant_txn_id).first()
                 if not order_obj and order_id:
@@ -294,17 +364,44 @@ class NPSWebhookListenerAPIView(APIView):
                 if order_obj:
                     txn.order = order_obj
                     txn.save(update_fields=["order"])
+                    print(
+                        f"[NPS Webhook Listener] Associated order #{order_obj.id} with transaction '{merchant_txn_id}'.",
+                        flush=True,
+                    )
 
             if str(txn_status).strip().lower() in ["success", "0"]:
                 txn.status = "Success"
+                print(
+                    f"[NPS Webhook Listener] Transaction '{merchant_txn_id}' status verified as SUCCESS. Updating order...",
+                    flush=True,
+                )
                 _update_order_on_success(txn.order, merchant_txn_id)
+            else:
+                print(
+                    f"[NPS Webhook Listener] Transaction '{merchant_txn_id}' status verified as '{txn_status}'.",
+                    flush=True,
+                )
         else:
             if gateway_txn_id:
                 txn.gateway_txn_id = gateway_txn_id
             txn.status = "Fail"
+            print(
+                f"[NPS Webhook Listener] Transaction '{merchant_txn_id}' verification failed or returned no data. Setting status to Fail.",
+                flush=True,
+            )
 
         txn.save()
+        print(
+            f"[NPS Webhook Listener] Webhook processing completed for '{merchant_txn_id}'. Saved status='{txn.status}'. Returning 200 OK.\n",
+            flush=True,
+        )
         return HttpResponse("received", status=200)
+
+    def get(self, request, *args, **kwargs):
+        return self._handle_webhook(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._handle_webhook(request, *args, **kwargs)
 
 
 class NPSVerifyTransactionAPIView(APIView):

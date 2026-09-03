@@ -127,6 +127,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
     branch = BranchSerializer(read_only=True)
     created_by_name = serializers.SerializerMethodField()
     assigned_to_rider_name = serializers.SerializerMethodField()
+    assigned_to_rider_phone = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -153,6 +154,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "created_by_name",
             "assigned_to_rider",
             "assigned_to_rider_name",
+            "assigned_to_rider_phone",
             "items",
         ]
 
@@ -166,6 +168,15 @@ class OrderResponseSerializer(serializers.ModelSerializer):
         if obj.assigned_to_rider:
             full_name = obj.assigned_to_rider.get_full_name().strip()
             return full_name if full_name else obj.assigned_to_rider.username
+        return None
+
+    def get_assigned_to_rider_phone(self, obj):
+        if obj.assigned_to_rider:
+            return (
+                obj.assigned_to_rider.phone_number
+                if obj.assigned_to_rider.phone_number
+                else None
+            )
         return None
 
 
@@ -278,5 +289,3 @@ class AssignRiderSerializer(serializers.Serializer):
                 "Either 'barcode_number' or 'order_number' must be provided."
             )
         return attrs
-
-
