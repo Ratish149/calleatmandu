@@ -7,6 +7,7 @@ from account.views import (
     LoginView,
     SignupView,
     UserListAPIView,
+    UserMeAPIView,
     UserRetrieveUpdateDestroyAPIView,
 )
 
@@ -15,6 +16,7 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path("social/google/", GoogleLoginView.as_view(), name="google_login"),
+    path("user/me/", UserMeAPIView.as_view(), name="user-me-alias"),
     path("users/", UserListAPIView.as_view(), name="user-list"),
     path(
         "users/<int:pk>/",

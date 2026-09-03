@@ -6,6 +6,7 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView,
     ListCreateAPIView,
+    RetrieveUpdateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -55,6 +56,23 @@ class UserRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def get_serializer_class(self):
         if self.request.method in ["PUT", "PATCH"]:
+            return UserUpdateSerializer
+        return UserSerializer
+
+
+class UserMeAPIView(RetrieveUpdateAPIView):
+    """
+    API view to retrieve (GET) or partially update (PATCH) the currently authenticated user's details based on JWT token.
+    """
+
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self):
+        return User.objects.select_related("branch").get(pk=self.request.user.pk)
+
+    def get_serializer_class(self):
+        if self.request.method == "PATCH":
             return UserUpdateSerializer
         return UserSerializer
 
@@ -128,7 +146,6 @@ class ChangePasswordView(GenericAPIView):
             {"message": "Password changed successfully."},
             status=status.HTTP_200_OK,
         )
-
 
 
 class GoogleLoginView(GenericAPIView):
