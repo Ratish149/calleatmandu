@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "contact",
     "notification",
     "nps_payment",
+    "stats",
 ]
 
 

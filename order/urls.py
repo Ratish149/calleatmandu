@@ -5,10 +5,16 @@ from order.views import (
     OrderListCreateAPIView,
     OrderRetrieveUpdateDestroyAPIView,
     POSOrderListCreateAPIView,
+    RecentOrdersAPIView,
 )
 
 urlpatterns = [
     path("orders/", OrderListCreateAPIView.as_view(), name="order-list-create"),
+    path(
+        "orders/recent/",
+        RecentOrdersAPIView.as_view(),
+        name="recent-orders",
+    ),
     path(
         "orders/pos/", POSOrderListCreateAPIView.as_view(), name="pos-order-list-create"
     ),

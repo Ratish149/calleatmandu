@@ -6,6 +6,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
@@ -177,3 +178,37 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     serializer_class = OrderResponseSerializer
     permission_classes = [IsStaffOrOperationalRole]
     lookup_field = "order_number"
+
+
+class RecentOrdersAPIView(GenericAPIView):
+    """
+    API View to retrieve the 5 most recent orders for any authenticated user.
+    Accepts optional query parameter `limit` (default: 5).
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderResponseSerializer
+
+    def get(self, request, *args, **kwargs):
+        queryset = (
+            Order.objects
+            .select_related(
+                "branch",
+                "user",
+                "created_by",
+                "assigned_to_rider",
+                "offer",
+                "promo_code",
+            )
+            .prefetch_related("items__product", "items__selected_extras")
+            .order_by("-created_at")
+        )
+
+        try:
+            limit = int(request.query_params.get("limit", 5))
+        except (ValueError, TypeError):
+            limit = 5
+
+        recent_orders = queryset[:limit]
+        serializer = self.get_serializer(recent_orders, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

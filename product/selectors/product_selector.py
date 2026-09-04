@@ -16,7 +16,8 @@ def get_related_products_by_slug(product_slug: str) -> QuerySet[Product]:
         return Product.objects.none()
 
     return (
-        Product.objects.filter(category_id=product.category_id)
+        Product.objects
+        .filter(category_id=product.category_id)
         .exclude(id=product.id)
         .select_related("category")
         .prefetch_related("extras")
