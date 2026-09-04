@@ -2,6 +2,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
 from rest_framework.filters import SearchFilter
 from rest_framework.generics import (
+    ListAPIView,
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
@@ -11,6 +12,7 @@ from rest_framework.response import Response
 from common.utils import CustomPagination
 from product.filters import CategoryFilter, ProductFilter, SubcategoryFilter
 from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
+from product.selectors import get_related_products_by_slug
 from product.serializers import (
     CategorySerializer,
     ProductCreateSerializer,
@@ -225,3 +227,23 @@ class ProductImageRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return ProductImage.objects.filter(product__slug=self.kwargs["product_slug"])
+
+
+# ---------------------------------------------------------------------------
+# Related Product
+# ---------------------------------------------------------------------------
+
+
+class RelatedProductListAPIView(ListAPIView):
+    """
+    GET /products/<product_slug>/related/ — list related products in the same category
+    """
+
+    serializer_class = ProductListSerializer
+    permission_classes = [AllowAny]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        product_slug = self.kwargs.get("product_slug") or self.kwargs.get("slug")
+        return get_related_products_by_slug(product_slug)
+

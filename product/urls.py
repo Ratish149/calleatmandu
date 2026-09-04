@@ -9,6 +9,7 @@ from product.views import (
     ProductImageRetrieveUpdateDestroyAPIView,
     ProductListCreateAPIView,
     ProductRetrieveUpdateDestroyAPIView,
+    RelatedProductListAPIView,
     SubcategoryListCreateAPIView,
     SubcategoryRetrieveUpdateDestroyAPIView,
 )
@@ -36,6 +37,11 @@ urlpatterns = [
     ),
     # Products  — identified by slug
     path("products/", ProductListCreateAPIView.as_view(), name="product-list-create"),
+    path(
+        "products/<slug:product_slug>/related/",
+        RelatedProductListAPIView.as_view(),
+        name="related-product-list",
+    ),
     path(
         "products/<slug:slug>/",
         ProductRetrieveUpdateDestroyAPIView.as_view(),
