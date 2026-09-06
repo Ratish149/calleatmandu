@@ -128,6 +128,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     assigned_to_rider_name = serializers.SerializerMethodField()
     assigned_to_rider_phone = serializers.SerializerMethodField()
+    nps_payment_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -146,6 +147,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "total_amount",
             "discount_amount",
             "payment_type",
+            "nps_payment_status",
             "transaction_id",
             "is_paid",
             "status",
@@ -177,6 +179,13 @@ class OrderResponseSerializer(serializers.ModelSerializer):
                 if obj.assigned_to_rider.phone_number
                 else None
             )
+        return None
+
+    def get_nps_payment_status(self, obj):
+        if obj.payment_type == Order.PaymentType.NPS or obj.payment_type == "NPS":
+            nps_txns = list(obj.nps_transactions.all())
+            if nps_txns:
+                return nps_txns[0].status
         return None
 
 

@@ -40,7 +40,9 @@ class OrderListCreateAPIView(ListCreateAPIView):
                 "offer",
                 "promo_code",
             )
-            .prefetch_related("items__product", "items__selected_extras")
+            .prefetch_related(
+                "items__product", "items__selected_extras", "nps_transactions"
+            )
             .order_by("-created_at")
         )
         user = self.request.user
@@ -101,7 +103,9 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
                 "offer",
                 "promo_code",
             )
-            .prefetch_related("items__product", "items__selected_extras")
+            .prefetch_related(
+                "items__product", "items__selected_extras", "nps_transactions"
+            )
             .order_by("-created_at")
         )
         user = self.request.user
@@ -174,7 +178,7 @@ class AssignRiderAPIView(GenericAPIView):
 class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Order.objects.select_related(
         "branch", "user", "created_by", "assigned_to_rider", "offer", "promo_code"
-    ).prefetch_related("items__product", "items__selected_extras")
+    ).prefetch_related("items__product", "items__selected_extras", "nps_transactions")
     serializer_class = OrderResponseSerializer
     permission_classes = [IsStaffOrOperationalRole]
     lookup_field = "order_number"
@@ -200,7 +204,9 @@ class RecentOrdersAPIView(GenericAPIView):
                 "offer",
                 "promo_code",
             )
-            .prefetch_related("items__product", "items__selected_extras")
+            .prefetch_related(
+                "items__product", "items__selected_extras", "nps_transactions"
+            )
             .order_by("-created_at")
         )
 

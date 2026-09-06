@@ -55,7 +55,11 @@ class SalesStatsFilter(django_filters.FilterSet):
         parent_qs = super().qs
         data = self.data
         # If no explicit period or date filter is supplied, default to current month daily stats
-        if not data.get("period") and not data.get("start_date") and not data.get("end_date"):
+        if (
+            not data.get("period")
+            and not data.get("start_date")
+            and not data.get("end_date")
+        ):
             today = timezone.localtime(timezone.now()).date()
             start = today.replace(day=1)
             return parent_qs.filter(
@@ -75,7 +79,11 @@ class PeakHoursFilter(SalesStatsFilter):
         parent_qs = super(SalesStatsFilter, self).qs
         data = self.data
         # Default to this week's data (last 7 days) if no explicit filter parameters are supplied
-        if not data.get("period") and not data.get("start_date") and not data.get("end_date"):
+        if (
+            not data.get("period")
+            and not data.get("start_date")
+            and not data.get("end_date")
+        ):
             today = timezone.localtime(timezone.now()).date()
             start = today - timedelta(days=6)
             return parent_qs.filter(
