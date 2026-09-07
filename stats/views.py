@@ -66,7 +66,8 @@ class SalesStatsAPIView(GenericAPIView):
 
     def get(self, request, *args, **kwargs):
         filtered_qs = self.filter_queryset(self.get_queryset())
-        sales_data = get_daily_sales_stats(filtered_qs)
+        period = request.query_params.get("period", "daily")
+        sales_data = get_daily_sales_stats(filtered_qs, period=period)
         serializer = self.get_serializer(sales_data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

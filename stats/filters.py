@@ -39,12 +39,12 @@ class SalesStatsFilter(django_filters.FilterSet):
                 created_at__date__gte=start, created_at__date__lte=today
             )
         elif value == "weekly":
-            start = today - timedelta(days=6)
+            start = today - timedelta(weeks=12)
             return queryset.filter(
                 created_at__date__gte=start, created_at__date__lte=today
             )
         elif value == "monthly":
-            start = today - timedelta(days=29)
+            start = today - timedelta(days=365)
             return queryset.filter(
                 created_at__date__gte=start, created_at__date__lte=today
             )
