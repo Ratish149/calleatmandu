@@ -25,7 +25,18 @@ class NPSConfigSerializer(serializers.ModelSerializer):
 
 
 class NPSInitiatePaymentSerializer(serializers.Serializer):
-    order_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    order_number = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Order number (e.g., ORD_482931).",
+    )
+    order_id = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Alias for order_number.",
+    )
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     remarks = serializers.CharField(max_length=255, required=False, allow_blank=True)
     instrument_code = serializers.CharField(

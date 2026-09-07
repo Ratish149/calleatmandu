@@ -6,7 +6,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
@@ -19,6 +19,7 @@ from order.serializers import (
     OrderResponseSerializer,
     OrderStatusUpdateSerializer,
     POSOrderCreateSerializer,
+    PublicOrderUpdateSerializer,
 )
 from order.services.order_service import OrderService
 
@@ -319,3 +320,67 @@ class RecentOrdersAPIView(GenericAPIView):
         recent_orders = queryset[:limit]
         serializer = self.get_serializer(recent_orders, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PublicOrderUpdateAPIView(GenericAPIView):
+    """
+    Public API view to update an order's payment and status fields without requiring authentication (without token).
+    Identified by `order_number` passed in URL path or request payload.
+    Supports updating:
+    - is_paid (boolean)
+    - payment_type (COD / NPS)
+    - status (PENDING / CONFIRMED / PREPARING / OUT_FOR_DELIVERY / DELIVERED / CANCELLED)
+    - transaction_id (string)
+    - comment (optional string for status change history)
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = PublicOrderUpdateSerializer
+
+    def patch(self, request, order_number=None, *args, **kwargs):
+        return self._update_order(request, order_number)
+
+    def _update_order(self, request, order_number=None):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_order_number = order_number or serializer.validated_data.get(
+            "order_number"
+        )
+
+        if not target_order_number:
+            return Response(
+                {"error": "order_number is required in URL path or request body."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order = Order.objects.filter(
+            order_number=str(target_order_number).strip()
+        ).first()
+        if not order:
+            return Response(
+                {"error": f"Order '{target_order_number}' not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        validated_data = serializer.validated_data
+
+        if "is_paid" in validated_data:
+            order.is_paid = validated_data["is_paid"]
+
+        if "payment_type" in validated_data:
+            order.payment_type = validated_data["payment_type"]
+
+        if "transaction_id" in validated_data:
+            order.transaction_id = validated_data["transaction_id"]
+
+        comment = validated_data.get("comment")
+        if comment:
+            order._status_change_comment = comment
+
+        if "status" in validated_data:
+            order.status = validated_data["status"]
+
+        order.save()
+
+        return Response(OrderResponseSerializer(order).data, status=status.HTTP_200_OK)

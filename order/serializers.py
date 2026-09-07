@@ -377,3 +377,35 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
                     {"comment": "A comment/reason is required when cancelling an order."}
                 )
         return attrs
+
+
+class PublicOrderUpdateSerializer(serializers.Serializer):
+    """
+    Serializer to update order payment and status fields publicly without authentication.
+    Identified by order_number.
+    Allowed update fields: is_paid, payment_type, status, transaction_id, comment.
+    """
+
+    order_number = serializers.CharField(
+        max_length=12,
+        required=False,
+        allow_blank=True,
+        help_text="Order number (e.g. ORD_482931). Required if not provided in URL path.",
+    )
+    is_paid = serializers.BooleanField(required=False)
+    payment_type = serializers.ChoiceField(
+        choices=Order.PaymentType.choices, required=False
+    )
+    status = serializers.ChoiceField(
+        choices=Order.OrderStatus.choices, required=False
+    )
+    transaction_id = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, allow_null=True
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Optional comment for status change log.",
+    )
+

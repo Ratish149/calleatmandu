@@ -137,25 +137,36 @@ class NPSInitiatePaymentAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
+        print("Initiate Payment Request Payload:", request.data, flush=True)
+
         serializer = NPSInitiatePaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        order_id = serializer.validated_data.get("order_id")
+        order_identifier = serializer.validated_data.get(
+            "order_number"
+        ) or serializer.validated_data.get("order_id")
         amount = serializer.validated_data["amount"]
         remarks = serializer.validated_data.get("remarks", "")
         instrument_code = serializer.validated_data.get("instrument_code", "")
         response_url = serializer.validated_data.get("response_url", "")
 
+        print("order_identifier:", order_identifier, flush=True)
+        print("amount:", amount, flush=True)
+        print("remarks:", remarks, flush=True)
+        print("instrument_code:", instrument_code, flush=True)
+        print("response_url:", response_url, flush=True)
+
         order = None
-        if order_id:
-            order_id_str = str(order_id).strip()
-            if order_id_str.isdigit():
-                order = Order.objects.filter(id=int(order_id_str)).first()
-            if not order:
-                order = Order.objects.filter(order_number=order_id_str).first()
+        if order_identifier:
+            order_identifier_str = str(order_identifier).strip()
+            # Try finding by order_number first (e.g. ORD_482931)
+            order = Order.objects.filter(order_number=order_identifier_str).first()
+            # Fall back to finding by PK if digits
+            if not order and order_identifier_str.isdigit():
+                order = Order.objects.filter(id=int(order_identifier_str)).first()
             if not order:
                 return Response(
-                    {"detail": f"Order '{order_id}' not found."},
+                    {"detail": f"Order '{order_identifier}' not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
