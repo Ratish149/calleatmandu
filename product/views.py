@@ -92,7 +92,7 @@ class ProductListCreateAPIView(ListCreateAPIView):
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter
     pagination_class = CustomPagination
-    search_fields = ["name", "description"]
+    search_fields = ["name"]
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -246,4 +246,3 @@ class RelatedProductListAPIView(ListAPIView):
     def get_queryset(self):
         product_slug = self.kwargs.get("product_slug") or self.kwargs.get("slug")
         return get_related_products_by_slug(product_slug)
-
