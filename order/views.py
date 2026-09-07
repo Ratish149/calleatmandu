@@ -154,9 +154,10 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
 
 class AssignRiderAPIView(GenericAPIView):
     """
-    Unified API view to assign a rider to an order.
+    Unified API view to assign or unassign a rider to an order.
     Accepts either `barcode_number` or `order_number` to find the order.
-    Assigns to specified `rider` if provided, otherwise defaults to `request.user`.
+    If `rider` key is provided (including null), sets rider to that value.
+    If `rider` key is omitted completely, defaults to `request.user`.
     """
 
     permission_classes = [IsStaffOrOperationalRole]
@@ -168,7 +169,11 @@ class AssignRiderAPIView(GenericAPIView):
 
         barcode_number = serializer.validated_data.get("barcode_number")
         order_number = serializer.validated_data.get("order_number")
-        rider = serializer.validated_data.get("rider") or request.user
+
+        if "rider" in serializer.validated_data:
+            rider = serializer.validated_data["rider"]
+        else:
+            rider = request.user
 
         try:
             order = OrderService.assign_rider(

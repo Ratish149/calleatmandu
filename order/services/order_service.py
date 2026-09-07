@@ -439,7 +439,7 @@ class OrderService:
             raise ValueError("Either barcode_number or order_number must be provided.")
 
         order.assigned_to_rider = rider
-        if order.status in [
+        if rider is not None and order.status in [
             Order.OrderStatus.PENDING,
             Order.OrderStatus.CONFIRMED,
             Order.OrderStatus.PREPARING,
@@ -449,11 +449,22 @@ class OrderService:
         order.save(update_fields=["assigned_to_rider", "status", "updated_at"])
 
         # Trigger notification creation and WebSocket push
+        notification_title = (
+            f"Order #{order.order_number} Out for Delivery"
+            if rider
+            else f"Rider Unassigned from Order #{order.order_number}"
+        )
+        notification_msg = (
+            f"Rider {rider.get_full_name() or rider.username} has been assigned to your order."
+            if rider
+            else "Rider assignment has been removed from your order."
+        )
+
         transaction.on_commit(
             lambda: NotificationService.create_notification(
-                title=f"Order #{order.order_number} Out for Delivery",
-                message=f"Rider {rider.username if rider else ''} has been assigned to your order.",
-                notification_type="rider_assigned",
+                title=notification_title,
+                message=notification_msg,
+                notification_type="rider_assigned" if rider else "rider_unassigned",
                 data={
                     "order_number": order.order_number,
                     "status": order.status,
@@ -474,7 +485,9 @@ class OrderService:
           OrderStatusHistory creation upon save().
         - Triggers notification.
         """
-        if new_status == Order.OrderStatus.CANCELLED and (not comment or not comment.strip()):
+        if new_status == Order.OrderStatus.CANCELLED and (
+            not comment or not comment.strip()
+        ):
             raise ValueError("A comment/reason is required when cancelling an order.")
 
         old_status = order.status
