@@ -463,3 +463,42 @@ class OrderService:
         )
 
         return order
+
+    @classmethod
+    @transaction.atomic
+    def update_order_status(cls, order, new_status, comment=None, changed_by=None):
+        """
+        Updates the status of an order.
+        - Validates that a comment is provided if new_status is CANCELLED.
+        - Attaches optional comment and changed_by attributes to trigger automatic
+          OrderStatusHistory creation upon save().
+        - Triggers notification.
+        """
+        if new_status == Order.OrderStatus.CANCELLED and (not comment or not comment.strip()):
+            raise ValueError("A comment/reason is required when cancelling an order.")
+
+        old_status = order.status
+        order.status = new_status
+        if comment:
+            order._status_change_comment = comment.strip()
+        if changed_by:
+            order._status_changed_by = changed_by
+
+        order.save()
+
+        # Trigger notification creation and WebSocket push
+        transaction.on_commit(
+            lambda: NotificationService.create_notification(
+                title=f"Order #{order.order_number} {order.get_status_display()}",
+                message=f"Order status updated to {order.get_status_display()}."
+                + (f" Reason: {comment}" if comment else ""),
+                notification_type="order_status_update",
+                data={
+                    "order_number": order.order_number,
+                    "status": order.status,
+                    "old_status": old_status,
+                },
+            )
+        )
+
+        return order

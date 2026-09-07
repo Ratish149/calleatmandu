@@ -9,7 +9,7 @@ from common.models import BaseModel
 def generate_order_number():
     """Generate a unique order number like EAT_482931."""
     while True:
-        number = f"EAT_{random.randint(100000, 999999)}"
+        number = f"ORD_{random.randint(100000, 999999)}"
         if not Order.objects.filter(order_number=number).exists():
             return number
 
@@ -144,14 +144,93 @@ class Order(BaseModel):
         ]
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        status_changed = False
+
+        if not is_new:
+            old_order = Order.objects.filter(pk=self.pk).only("status").first()
+            if old_order and old_order.status != self.status:
+                old_status = old_order.status
+                status_changed = True
+        else:
+            status_changed = True
+
         if not self.order_number:
             self.order_number = generate_order_number()
         if not self.barcode_number:
             self.barcode_number = generate_barcode_number()
+
         super().save(*args, **kwargs)
+
+        if status_changed:
+            comment = getattr(self, "_status_change_comment", None)
+            changed_by = getattr(self, "_status_changed_by", None)
+            if is_new and not comment:
+                comment = "Order created"
+            OrderStatusHistory.objects.create(
+                order=self,
+                old_status=old_status,
+                status=self.status,
+                comment=comment,
+                changed_by=changed_by,
+            )
+            if hasattr(self, "_status_change_comment"):
+                delattr(self, "_status_change_comment")
+            if hasattr(self, "_status_changed_by"):
+                delattr(self, "_status_changed_by")
 
     def __str__(self):
         return f"{self.order_number} - {self.customer_name} ({self.status})"
+
+
+class OrderStatusHistory(BaseModel):
+    """
+    Log history of order status changes with optional comments and tracking who made the change.
+    """
+
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.CASCADE,
+        related_name="status_history",
+    )
+    old_status = models.CharField(
+        max_length=30,
+        choices=Order.OrderStatus.choices,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=Order.OrderStatus.choices,
+        db_index=True,
+    )
+    comment = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional comment explaining the order status change.",
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_status_changes",
+    )
+
+    class Meta:
+        verbose_name = "Order Status History"
+        verbose_name_plural = "Order Status Histories"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["order", "-created_at"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+
+    def __str__(self):
+        from_str = f"{self.old_status} \u2192 " if self.old_status else ""
+        return f"Order #{self.order.order_number}: {from_str}{self.status}"
 
 
 class OrderItem(BaseModel):

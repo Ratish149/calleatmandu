@@ -1,7 +1,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from order.models import Order, OrderItem, OrderItemExtra
+from order.models import Order, OrderItem, OrderItemExtra, OrderStatusHistory
 
 
 class OrderItemExtraInline(TabularInline):
@@ -14,6 +14,12 @@ class OrderItemInline(TabularInline):
     model = OrderItem
     extra = 0
     readonly_fields = ["product", "quantity", "unit_price", "extras_price", "subtotal"]
+
+
+class OrderStatusHistoryInline(TabularInline):
+    model = OrderStatusHistory
+    extra = 0
+    readonly_fields = ["old_status", "status", "comment", "changed_by", "created_at"]
 
 
 @admin.register(Order)
@@ -39,7 +45,15 @@ class OrderAdmin(ModelAdmin):
         "phone_number",
         "delivery_location",
     ]
-    inlines = [OrderItemInline]
+    inlines = [OrderItemInline, OrderStatusHistoryInline]
+    ordering = ["-created_at"]
+
+
+@admin.register(OrderStatusHistory)
+class OrderStatusHistoryAdmin(ModelAdmin):
+    list_display = ["order", "old_status", "status", "comment", "changed_by", "created_at"]
+    list_filter = ["status", "old_status", "created_at"]
+    search_fields = ["order__order_number", "comment"]
     ordering = ["-created_at"]
 
 

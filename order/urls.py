@@ -4,6 +4,7 @@ from order.views import (
     AssignRiderAPIView,
     OrderListCreateAPIView,
     OrderRetrieveUpdateDestroyAPIView,
+    OrderStatusUpdateAPIView,
     POSOrderListCreateAPIView,
     RecentOrdersAPIView,
 )
@@ -22,6 +23,16 @@ urlpatterns = [
         "orders/assign-rider/",
         AssignRiderAPIView.as_view(),
         name="order-assign-rider",
+    ),
+    path(
+        "orders/update-status/",
+        OrderStatusUpdateAPIView.as_view(),
+        name="order-update-status-body",
+    ),
+    path(
+        "orders/<str:order_number>/status/",
+        OrderStatusUpdateAPIView.as_view(),
+        name="order-update-status",
     ),
     path(
         "orders/<str:order_number>/",

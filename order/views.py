@@ -1,5 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.filters import SearchFilter
 from rest_framework.generics import (
     GenericAPIView,
@@ -17,6 +17,7 @@ from order.serializers import (
     AssignRiderSerializer,
     OrderCreateSerializer,
     OrderResponseSerializer,
+    OrderStatusUpdateSerializer,
     POSOrderCreateSerializer,
 )
 from order.services.order_service import OrderService
@@ -41,7 +42,10 @@ class OrderListCreateAPIView(ListCreateAPIView):
                 "promo_code",
             )
             .prefetch_related(
-                "items__product", "items__selected_extras", "nps_transactions"
+                "items__product",
+                "items__selected_extras",
+                "nps_transactions",
+                "status_history__changed_by",
             )
             .order_by("-created_at")
         )
@@ -104,7 +108,10 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
                 "promo_code",
             )
             .prefetch_related(
-                "items__product", "items__selected_extras", "nps_transactions"
+                "items__product",
+                "items__selected_extras",
+                "nps_transactions",
+                "status_history__changed_by",
             )
             .order_by("-created_at")
         )
@@ -175,13 +182,99 @@ class AssignRiderAPIView(GenericAPIView):
         return Response(OrderResponseSerializer(order).data, status=status.HTTP_200_OK)
 
 
+class OrderStatusUpdateAPIView(GenericAPIView):
+    """
+    API View for riders and operational staff to update order status.
+    Requires a comment/reason if the target status is CANCELLED.
+    Lookup supports either:
+    1. URL parameter `order_number` (e.g. PATCH /orders/<order_number>/status/)
+    2. Body parameters `order_number` or `barcode_number` (e.g. POST /orders/status/)
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = OrderStatusUpdateSerializer
+
+    def patch(self, request, *args, **kwargs):
+        return self.update_status(request, *args, **kwargs)
+
+    def update_status(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order_number = kwargs.get("order_number") or serializer.validated_data.get(
+            "order_number"
+        )
+        barcode_number = serializer.validated_data.get("barcode_number")
+        new_status = serializer.validated_data["status"]
+        comment = serializer.validated_data.get("comment")
+
+        order = None
+        if order_number:
+            order = Order.objects.filter(order_number=order_number).first()
+            if not order:
+                return Response(
+                    {"error": f"Order with order_number '{order_number}' not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        elif barcode_number:
+            order = Order.objects.filter(barcode_number=barcode_number).first()
+            if not order:
+                return Response(
+                    {"error": f"Order with barcode '{barcode_number}' not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        else:
+            return Response(
+                {
+                    "error": "Either order_number (in URL or body) or barcode_number must be provided."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            order = OrderService.update_order_status(
+                order=order,
+                new_status=new_status,
+                comment=comment,
+                changed_by=request.user,
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(OrderResponseSerializer(order).data, status=status.HTTP_200_OK)
+
+
 class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Order.objects.select_related(
         "branch", "user", "created_by", "assigned_to_rider", "offer", "promo_code"
-    ).prefetch_related("items__product", "items__selected_extras", "nps_transactions")
+    ).prefetch_related(
+        "items__product",
+        "items__selected_extras",
+        "nps_transactions",
+        "status_history__changed_by",
+    )
     serializer_class = OrderResponseSerializer
     permission_classes = [IsStaffOrOperationalRole]
     lookup_field = "order_number"
+
+    def perform_update(self, serializer):
+        new_status = serializer.validated_data.get("status")
+        comment = self.request.data.get("comment") or self.request.data.get(
+            "status_comment"
+        )
+
+        if new_status == Order.OrderStatus.CANCELLED and (
+            not comment or not comment.strip()
+        ):
+            raise serializers.ValidationError({
+                "comment": "A comment/reason is required when cancelling an order."
+            })
+
+        if comment:
+            serializer.instance._status_change_comment = comment
+        if self.request.user and self.request.user.is_authenticated:
+            serializer.instance._status_changed_by = self.request.user
+        serializer.save()
 
 
 class RecentOrdersAPIView(GenericAPIView):
@@ -205,7 +298,10 @@ class RecentOrdersAPIView(GenericAPIView):
                 "promo_code",
             )
             .prefetch_related(
-                "items__product", "items__selected_extras", "nps_transactions"
+                "items__product",
+                "items__selected_extras",
+                "nps_transactions",
+                "status_history__changed_by",
             )
             .order_by("-created_at")
         )

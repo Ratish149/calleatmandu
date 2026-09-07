@@ -3,9 +3,37 @@ from rest_framework import serializers
 
 from account.models import Branch
 from account.serializers import BranchSerializer
-from order.models import Order, OrderItem, OrderItemExtra
+from order.models import Order, OrderItem, OrderItemExtra, OrderStatusHistory
 
 User = get_user_model()
+
+# ---------------------------------------------------------------------------
+# Status History
+# ---------------------------------------------------------------------------
+
+
+class OrderStatusHistorySerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderStatusHistory
+        fields = [
+            "id",
+            "old_status",
+            "status",
+            "comment",
+            "changed_by",
+            "changed_by_name",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def get_changed_by_name(self, obj):
+        if obj.changed_by:
+            full_name = obj.changed_by.get_full_name().strip()
+            return full_name if full_name else obj.changed_by.username
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Extras
@@ -129,6 +157,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
     assigned_to_rider_name = serializers.SerializerMethodField()
     assigned_to_rider_phone = serializers.SerializerMethodField()
     nps_payment_status = serializers.SerializerMethodField()
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Order
@@ -158,6 +187,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "assigned_to_rider_name",
             "assigned_to_rider_phone",
             "items",
+            "status_history",
         ]
 
     def get_created_by_name(self, obj):
@@ -198,6 +228,7 @@ class OrderSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     created_by_name = serializers.SerializerMethodField()
     assigned_to_rider_name = serializers.SerializerMethodField()
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Order
@@ -230,6 +261,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "assigned_to_rider",
             "assigned_to_rider_name",
             "items",
+            "status_history",
             "created_at",
             "updated_at",
         ]
@@ -297,4 +329,43 @@ class AssignRiderSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Either 'barcode_number' or 'order_number' must be provided."
             )
+        return attrs
+
+
+class OrderStatusUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating an order's status by riders and staff.
+    Requires a comment if the target status is CANCELLED.
+    Optionally accepts order_number or barcode_number in body if not provided in URL path.
+    """
+
+    order_number = serializers.CharField(
+        max_length=12,
+        required=False,
+        allow_blank=True,
+        help_text="Order number (e.g. EAT_482931). Required if not in URL.",
+    )
+    barcode_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        help_text="Barcode number of the order.",
+    )
+    status = serializers.ChoiceField(choices=Order.OrderStatus.choices)
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Optional comment. Mandatory when cancelling an order.",
+    )
+
+    def validate(self, attrs):
+        status_val = attrs.get("status")
+        comment_val = attrs.get("comment")
+
+        if status_val == Order.OrderStatus.CANCELLED:
+            if not comment_val or not comment_val.strip():
+                raise serializers.ValidationError(
+                    {"comment": "A comment/reason is required when cancelling an order."}
+                )
         return attrs
