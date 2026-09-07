@@ -157,7 +157,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
     assigned_to_rider_name = serializers.SerializerMethodField()
     assigned_to_rider_phone = serializers.SerializerMethodField()
     nps_payment_status = serializers.SerializerMethodField()
-    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+    status_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -189,6 +189,10 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "items",
             "status_history",
         ]
+
+    def get_status_history(self, obj):
+        histories = sorted(obj.status_history.all(), key=lambda h: (h.created_at, h.id))
+        return OrderStatusHistorySerializer(histories, many=True).data
 
     def get_created_by_name(self, obj):
         if obj.created_by:
@@ -228,7 +232,7 @@ class OrderSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     created_by_name = serializers.SerializerMethodField()
     assigned_to_rider_name = serializers.SerializerMethodField()
-    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+    status_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -280,6 +284,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_status_history(self, obj):
+        histories = sorted(obj.status_history.all(), key=lambda h: (h.created_at, h.id))
+        return OrderStatusHistorySerializer(histories, many=True).data
 
     def get_created_by_name(self, obj):
         if obj.created_by:

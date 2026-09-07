@@ -222,9 +222,9 @@ class OrderStatusHistory(BaseModel):
     class Meta:
         verbose_name = "Order Status History"
         verbose_name_plural = "Order Status Histories"
-        ordering = ["-created_at"]
+        ordering = ["created_at", "id"]
         indexes = [
-            models.Index(fields=["order", "-created_at"]),
+            models.Index(fields=["order", "created_at"]),
             models.Index(fields=["status", "created_at"]),
         ]
 
