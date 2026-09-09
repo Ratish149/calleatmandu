@@ -15,6 +15,7 @@ class OrderFilter(filters.FilterSet):
     customer_name = filters.CharFilter(lookup_expr="icontains")
     phone_number = filters.CharFilter(lookup_expr="icontains")
     search = filters.CharFilter(method="filter_search")
+    is_pos_order = filters.BooleanFilter()
 
     class Meta:
         model = Order
@@ -29,6 +30,7 @@ class OrderFilter(filters.FilterSet):
             "customer_name",
             "phone_number",
             "search",
+            "is_pos_order",
         ]
 
     def filter_search(self, queryset, name, value):
