@@ -6,7 +6,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
@@ -262,6 +262,11 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     serializer_class = OrderResponseSerializer
     permission_classes = [IsStaffOrOperationalRole]
     lookup_field = "order_number"
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [AllowAny()]
+        return [permission() for permission in self.permission_classes]
 
     def perform_update(self, serializer):
         new_status = serializer.validated_data.get("status")
