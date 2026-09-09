@@ -35,5 +35,5 @@ RUN mkdir -p /app/media /app/static && \
 # Expose port
 EXPOSE 8000
 
-# Start daphne server
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "calleatmandu.asgi:application"]
+# Run migrations and start daphne server
+CMD ["sh", "-c", "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 calleatmandu.asgi:application"]
