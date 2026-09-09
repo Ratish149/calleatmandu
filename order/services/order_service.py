@@ -439,18 +439,11 @@ class OrderService:
             raise ValueError("Either barcode_number or order_number must be provided.")
 
         order.assigned_to_rider = rider
-        if rider is not None and order.status in [
-            Order.OrderStatus.PENDING,
-            Order.OrderStatus.CONFIRMED,
-            Order.OrderStatus.PREPARING,
-        ]:
-            order.status = Order.OrderStatus.OUT_FOR_DELIVERY
-
-        order.save(update_fields=["assigned_to_rider", "status", "updated_at"])
+        order.save(update_fields=["assigned_to_rider", "updated_at"])
 
         # Trigger notification creation and WebSocket push
         notification_title = (
-            f"Order #{order.order_number} Out for Delivery"
+            f"Rider Assigned to Order #{order.order_number}"
             if rider
             else f"Rider Unassigned from Order #{order.order_number}"
         )

@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "notification",
     "nps_payment",
     "stats",
+    "tracking",
 ]
 
 """ DATABASES = {
@@ -95,7 +96,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://publishers-finest-act-cloud.trycloudflare.com",
+    "https://worlds-spencer-participate-tropical.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -103,7 +104,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://publishers-finest-act-cloud.trycloudflare.com",
+    "https://worlds-spencer-participate-tropical.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 

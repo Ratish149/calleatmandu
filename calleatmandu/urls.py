@@ -33,6 +33,7 @@ urlpatterns = (
         path("api/", include("nps_payment.urls")),
         path("api/", include("notification.urls")),
         path("api/", include("stats.urls")),
+        path("api/", include("tracking.urls")),
     ]
     + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

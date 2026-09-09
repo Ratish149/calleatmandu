@@ -27,6 +27,7 @@ class Order(BaseModel):
         PENDING = "PENDING", "Pending"
         CONFIRMED = "CONFIRMED", "Confirmed"
         PREPARING = "PREPARING", "Preparing"
+        READY_FOR_PICKUP = "READY_FOR_PICKUP", "Ready for Pickup"
         OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", "Out for Delivery"
         DELIVERED = "DELIVERED", "Delivered"
         CANCELLED = "CANCELLED", "Cancelled"
