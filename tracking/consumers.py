@@ -57,9 +57,12 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
         if (not user or user.is_anonymous) and token_list:
             user = await get_user_from_token(token_list[0])
 
-        if not user or user.is_anonymous or user.role not in ["rider", "admin"]:
+        role = getattr(user, "role", "N/A")
+        print(f"👤 [WS RIDER AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'")
+
+        if not user or user.is_anonymous or role != "rider":
             print(
-                f"⛔ [WS RIDER REJECTED] Unauthorized user: {user} (Role: {getattr(user, 'role', 'N/A')})"
+                f"⛔ [WS RIDER REJECTED] Access Denied! User '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}) has role '{role}'. Only users with role='rider' can connect to this endpoint."
             )
             await self.close(code=4401)
             return
@@ -85,7 +88,7 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
         print(
             f"🔌 [WS RIDER DISCONNECT] Rider: {getattr(self, 'user', 'Unknown')} (Code: {close_code})"
         )
-        if hasattr(self, "user") and self.user and not self.user.is_anonymous:
+        if hasattr(self, "user") and self.user and not self.user.is_anonymous and getattr(self.user, "role", None) == "rider":
             try:
                 await database_sync_to_async(toggle_rider_online_status)(
                     rider=self.user,
@@ -206,9 +209,12 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
         if (not user or user.is_anonymous) and token_list:
             user = await get_user_from_token(token_list[0])
 
-        if not user or user.is_anonymous or user.role not in ["admin", "reception"]:
+        role = getattr(user, "role", "N/A")
+        print(f"👤 [WS ADMIN AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'")
+
+        if not user or user.is_anonymous or role not in ["admin", "reception"]:
             print(
-                f"⛔ [WS ADMIN REJECTED] Unauthorized user: {user} (Role: {getattr(user, 'role', 'N/A')})"
+                f"⛔ [WS ADMIN REJECTED] Unauthorized user: {user} (Role: {role})"
             )
             await self.close(code=4401)
             return
@@ -220,7 +226,7 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
 
         print(
-            f"✅ [WS ADMIN ACCEPTED] Admin: {self.user.username} (ID: {self.user.id})"
+            f"✅ [WS ADMIN ACCEPTED] Admin: {self.user.username} (ID: {self.user.id}, Role: {role})"
         )
 
         # Send initial snapshot of all online riders
@@ -245,7 +251,10 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
     def _get_initial_riders_data(self):
         queryset = get_active_riders_locations_qs()
         serializer = AdminRiderTrackingSerializer(queryset, many=True)
-        return serializer.data
+        data = serializer.data
+        rider_list = [f"{r.get('username')} (ID:{r.get('rider_id')})" for r in data]
+        print(f"🔍 [WS ADMIN SNAPSHOT QUERY] Found {len(data)} rider(s) with role='rider': {rider_list}")
+        return data
 
     async def rider_location_updated(self, event):
         """

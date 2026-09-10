@@ -4,6 +4,7 @@ from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 
 from tracking.filters import RiderLocationFilter
+from tracking.permissions import IsRider
 from tracking.selectors.tracking_selector import (
     get_active_riders_locations_qs,
     get_customer_order_tracking,
@@ -26,7 +27,7 @@ class RiderUpdateLocationAPIView(CreateAPIView):
     HTTP REST endpoint for riders to submit location updates.
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
     serializer_class = RiderLocationUpdateSerializer
 
     def create(self, request, *args, **kwargs):
@@ -49,7 +50,7 @@ class RiderToggleOnlineAPIView(CreateAPIView):
     HTTP REST endpoint for riders to toggle online/offline availability.
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsRider]
     serializer_class = RiderToggleOnlineSerializer
 
     def create(self, request, *args, **kwargs):

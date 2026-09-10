@@ -24,7 +24,16 @@ def update_rider_location(
     """
     Updates or creates a RiderLocation record and broadcasts the live GPS update
     via Django Channels to the Admin group and active Customer order groups.
+    Only allows users with role='rider'.
     """
+    if getattr(rider, "role", None) != "rider":
+        logger.warning(
+            f"Attempted location update for non-rider user #{rider.id} ({rider.username}, Role: {getattr(rider, 'role', None)})"
+        )
+        raise ValueError(
+            f"User #{rider.id} is not a rider (Role: {getattr(rider, 'role', None)})."
+        )
+
     location, created = RiderLocation.objects.get_or_create(
         rider=rider,
         defaults={
@@ -72,7 +81,16 @@ def update_rider_location(
 def toggle_rider_online_status(rider: User, is_online: bool) -> RiderLocation:
     """
     Toggles rider online/offline availability and broadcasts the status update to admin consumers.
+    Only allows users with role='rider'.
     """
+    if getattr(rider, "role", None) != "rider":
+        logger.warning(
+            f"Attempted status toggle for non-rider user #{rider.id} ({rider.username}, Role: {getattr(rider, 'role', None)})"
+        )
+        raise ValueError(
+            f"User #{rider.id} is not a rider (Role: {getattr(rider, 'role', None)})."
+        )
+
     location, _ = RiderLocation.objects.get_or_create(
         rider=rider,
         defaults={

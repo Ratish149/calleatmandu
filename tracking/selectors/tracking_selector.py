@@ -10,12 +10,14 @@ def get_active_riders_locations_qs() -> QuerySet[RiderLocation]:
     """
     Returns an optimized QuerySet of all rider locations, selecting
     related user details and assigned branch information to avoid N+1 queries.
+    Strictly filters for users with role='rider'.
     """
     return (
         RiderLocation.objects.select_related(
             "rider",
             "rider__branch",
         )
+        .filter(rider__role="rider")
         .only(
             "id",
             "latitude",
@@ -38,6 +40,7 @@ def get_active_riders_locations_qs() -> QuerySet[RiderLocation]:
 def get_rider_location_by_user(rider_user_id: int) -> Optional[RiderLocation]:
     """
     Retrieves the RiderLocation instance for a given rider user ID.
+    Strictly filters for users with role='rider'.
     """
     return (
         RiderLocation.objects.select_related("rider", "rider__branch")
@@ -56,7 +59,7 @@ def get_rider_location_by_user(rider_user_id: int) -> Optional[RiderLocation]:
             "rider__branch__id",
             "rider__branch__name",
         )
-        .filter(rider_id=rider_user_id)
+        .filter(rider_id=rider_user_id, rider__role="rider")
         .first()
     )
 
