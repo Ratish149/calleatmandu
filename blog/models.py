@@ -7,7 +7,9 @@ from common.models import BaseModel
 # Create your models here.
 class Blog(BaseModel):
     title = models.CharField(max_length=255, db_index=True)
-    slug = models.SlugField(unique=True, blank=True, null=True, db_index=True)
+    slug = models.SlugField(
+        max_length=255, unique=True, blank=True, null=True, db_index=True
+    )
     image = models.FileField(upload_to="blog/images/", null=True, blank=True)
     time_to_read = models.IntegerField(null=True, blank=True, help_text="in minutes")
     short_description = models.TextField(null=True, blank=True)
