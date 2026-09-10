@@ -53,12 +53,17 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
             f"\n🔌 [WS RIDER CONNECT] Incoming connection attempt. Query string: {query_string}"
         )
 
-        user = self.scope.get("user", AnonymousUser())
-        if (not user or user.is_anonymous) and token_list:
+        user = AnonymousUser()
+        if token_list:
             user = await get_user_from_token(token_list[0])
 
+        if not user or user.is_anonymous:
+            user = self.scope.get("user", AnonymousUser())
+
         role = getattr(user, "role", "N/A")
-        print(f"👤 [WS RIDER AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'")
+        print(
+            f"👤 [WS RIDER AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'"
+        )
 
         if not user or user.is_anonymous or role != "rider":
             print(
@@ -88,7 +93,12 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
         print(
             f"🔌 [WS RIDER DISCONNECT] Rider: {getattr(self, 'user', 'Unknown')} (Code: {close_code})"
         )
-        if hasattr(self, "user") and self.user and not self.user.is_anonymous and getattr(self.user, "role", None) == "rider":
+        if (
+            hasattr(self, "user")
+            and self.user
+            and not self.user.is_anonymous
+            and getattr(self.user, "role", None) == "rider"
+        ):
             try:
                 await database_sync_to_async(toggle_rider_online_status)(
                     rider=self.user,
@@ -205,17 +215,20 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
             f"\n🔌 [WS ADMIN CONNECT] Incoming connection attempt. Query string: {query_string}"
         )
 
-        user = self.scope.get("user", AnonymousUser())
-        if (not user or user.is_anonymous) and token_list:
+        user = AnonymousUser()
+        if token_list:
             user = await get_user_from_token(token_list[0])
 
+        if not user or user.is_anonymous:
+            user = self.scope.get("user", AnonymousUser())
+
         role = getattr(user, "role", "N/A")
-        print(f"👤 [WS ADMIN AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'")
+        print(
+            f"👤 [WS ADMIN AUTH CHECK] User: '{getattr(user, 'username', 'Anonymous')}' (ID: {getattr(user, 'id', 'N/A')}), Role: '{role}'"
+        )
 
         if not user or user.is_anonymous or role not in ["admin", "reception"]:
-            print(
-                f"⛔ [WS ADMIN REJECTED] Unauthorized user: {user} (Role: {role})"
-            )
+            print(f"⛔ [WS ADMIN REJECTED] Unauthorized user: {user} (Role: {role})")
             await self.close(code=4401)
             return
 
@@ -253,7 +266,9 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
         serializer = AdminRiderTrackingSerializer(queryset, many=True)
         data = serializer.data
         rider_list = [f"{r.get('username')} (ID:{r.get('rider_id')})" for r in data]
-        print(f"🔍 [WS ADMIN SNAPSHOT QUERY] Found {len(data)} rider(s) with role='rider': {rider_list}")
+        print(
+            f"🔍 [WS ADMIN SNAPSHOT QUERY] Found {len(data)} rider(s) with role='rider': {rider_list}"
+        )
         return data
 
     async def rider_location_updated(self, event):
