@@ -35,13 +35,25 @@ def update_rider_location(
         location.longitude = longitude
         location.save(update_fields=["latitude", "longitude", "last_updated_at"])
 
-    # Create historical breadcrumb record for route audit
+    # Create historical breadcrumb record for route audit if location has changed
     if save_history:
-        RiderLocationHistory.objects.create(
-            rider=rider,
-            latitude=latitude,
-            longitude=longitude,
+        recent_history = (
+            RiderLocationHistory.objects
+            .filter(rider=rider)
+            .only("latitude", "longitude")
+            .first()
         )
+        is_same_location = (
+            recent_history is not None
+            and recent_history.latitude == latitude
+            and recent_history.longitude == longitude
+        )
+        if not is_same_location:
+            RiderLocationHistory.objects.create(
+                rider=rider,
+                latitude=latitude,
+                longitude=longitude,
+            )
 
     # Broadcast real-time location to WebSocket channel groups
     _broadcast_rider_location_update(location, rider)
@@ -67,9 +79,7 @@ def toggle_rider_online_status(rider: User, is_online: bool) -> RiderLocation:
     # Broadcast status change to admin group
     channel_layer = get_channel_layer()
     if channel_layer:
-        rider_name = (
-            f"{rider.first_name} {rider.last_name}".strip() or rider.username
-        )
+        rider_name = f"{rider.first_name} {rider.last_name}".strip() or rider.username
         async_to_sync(channel_layer.group_send)(
             "admin_rider_tracking",
             {
@@ -95,9 +105,7 @@ def _broadcast_rider_location_update(location: RiderLocation, rider: User) -> No
     if not channel_layer:
         return
 
-    rider_name = (
-        f"{rider.first_name} {rider.last_name}".strip() or rider.username
-    )
+    rider_name = f"{rider.first_name} {rider.last_name}".strip() or rider.username
     payload = {
         "rider_id": rider.id,
         "rider_name": rider_name,

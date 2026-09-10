@@ -7,7 +7,6 @@ from tracking.models import RiderLocation, RiderLocationHistory
 @admin.register(RiderLocation)
 class RiderLocationAdmin(ModelAdmin):
     list_display = (
-        "id",
         "rider",
         "latitude",
         "longitude",
@@ -26,7 +25,7 @@ class RiderLocationAdmin(ModelAdmin):
 
 @admin.register(RiderLocationHistory)
 class RiderLocationHistoryAdmin(ModelAdmin):
-    list_display = ("id", "rider", "latitude", "longitude", "created_at")
+    list_display = ("rider", "latitude", "longitude", "created_at")
     list_filter = ("created_at",)
     search_fields = ("rider__username", "rider__phone_number")
     ordering = ("-created_at",)
