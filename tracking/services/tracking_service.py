@@ -1,4 +1,5 @@
 import logging
+import math
 from typing import Tuple
 
 from asgiref.sync import async_to_sync
@@ -9,6 +10,9 @@ from tracking.models import RiderLocation, RiderLocationHistory
 from tracking.selectors.tracking_selector import get_active_orders_for_rider
 
 logger = logging.getLogger(__name__)
+
+# Threshold for ignoring mobile GPS micro-jitter (0.00005 degrees ~ 5.5 meters)
+GPS_JITTER_THRESHOLD = 0.00005
 
 
 def update_rider_location(
@@ -35,7 +39,7 @@ def update_rider_location(
         location.longitude = longitude
         location.save(update_fields=["latitude", "longitude", "last_updated_at"])
 
-    # Create historical breadcrumb record for route audit if location has changed
+    # Create historical breadcrumb record for route audit if location has changed significantly
     if save_history:
         recent_history = (
             RiderLocationHistory.objects
@@ -45,8 +49,12 @@ def update_rider_location(
         )
         is_same_location = (
             recent_history is not None
-            and recent_history.latitude == latitude
-            and recent_history.longitude == longitude
+            and math.isclose(
+                recent_history.latitude, latitude, abs_tol=GPS_JITTER_THRESHOLD
+            )
+            and math.isclose(
+                recent_history.longitude, longitude, abs_tol=GPS_JITTER_THRESHOLD
+            )
         )
         if not is_same_location:
             RiderLocationHistory.objects.create(
