@@ -29,6 +29,14 @@ class RiderToggleOnlineSerializer(serializers.Serializer):
     is_online = serializers.BooleanField(help_text="True for online, False for offline")
 
 
+class RiderDisconnectSerializer(serializers.Serializer):
+    """
+    Serializer for disconnecting a rider tracking session.
+    """
+
+    pass
+
+
 class RiderLocationSerializer(serializers.ModelSerializer):
     """
     Standard serializer for RiderLocation model instance.

@@ -105,7 +105,7 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
                     is_online=False,
                 )
                 print(
-                    f"🔴 [WS RIDER OFFLINE] Rider #{self.user.id} ({self.user.username}) marked offline in DB & broadcast to Admin."
+                    f"🔴 [WS RIDER OFFLINE] Rider #{self.user.id} ({self.user.username}) marked offline on socket disconnect."
                 )
             except Exception as e:
                 print(f"❌ [WS RIDER DISCONNECT ERROR] Failed to set offline: {e}")
@@ -141,7 +141,7 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_json(err_resp)
                 return
 
-            # Perform DB update & broadcast to Admin & Customer groups via service
+            # Perform DB update (makes rider online) & broadcast to Admin & Customer groups via service
             location, _ = await database_sync_to_async(update_rider_location)(
                 rider=self.user,
                 latitude=lat,
@@ -153,6 +153,7 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
                 "status": "success",
                 "latitude": location.latitude,
                 "longitude": location.longitude,
+                "is_online": location.is_online,
                 "last_updated_at": location.last_updated_at.isoformat(),
             }
             print(f"📤 [WS RIDER RESPONSE ACK] ->\n{json.dumps(ack_resp, indent=2)}")
@@ -185,18 +186,49 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
             print(f"📤 [WS RIDER RESPONSE ACK] ->\n{json.dumps(ack_resp, indent=2)}")
             await self.send_json(ack_resp)
 
+        elif action in ["disconnect", "close", "logout", "rider_disconnect"]:
+            location = await database_sync_to_async(toggle_rider_online_status)(
+                rider=self.user,
+                is_online=False,
+            )
+            ack_resp = {
+                "event": "disconnected",
+                "status": "success",
+                "message": "Rider disconnected and set offline.",
+                "is_online": location.is_online,
+                "last_updated_at": location.last_updated_at.isoformat(),
+            }
+            print(f"📤 [WS RIDER DISCONNECT ACK] ->\n{json.dumps(ack_resp, indent=2)}")
+            await self.send_json(ack_resp)
+            await self.close(code=1000)
+
         else:
             err_resp = {
                 "event": "error",
                 "message": (
                     f"Unknown action/type '{action}'. Supported values: "
-                    "'update_location', 'toggle_online', 'rider_online', 'rider_offline'."
+                    "'update_location', 'toggle_online', 'rider_online', 'rider_offline', 'disconnect'."
                 ),
             }
             print(
                 f"❌ [WS RIDER UNKNOWN ACTION] {action} -> Sending:\n{json.dumps(err_resp, indent=2)}"
             )
             await self.send_json(err_resp)
+
+    async def force_disconnect(self, event):
+        """
+        Channel layer event handler to forcefully close rider's WebSocket connection.
+        """
+        payload = {
+            "event": "disconnected",
+            "status": "success",
+            "message": "Disconnected by server.",
+        }
+        print(
+            f"🔌 [WS RIDER FORCE DISCONNECT] Rider #{getattr(self.user, 'id', 'N/A')}"
+        )
+        await self.send_json(payload)
+        await self.close(code=4000)
 
 
 class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):

@@ -12,11 +12,13 @@ from tracking.selectors.tracking_selector import (
 from tracking.serializers import (
     AdminRiderTrackingSerializer,
     CustomerOrderTrackingSerializer,
+    RiderDisconnectSerializer,
     RiderLocationSerializer,
     RiderLocationUpdateSerializer,
     RiderToggleOnlineSerializer,
 )
 from tracking.services.tracking_service import (
+    disconnect_rider_session,
     toggle_rider_online_status,
     update_rider_location,
 )
@@ -64,6 +66,30 @@ class RiderToggleOnlineAPIView(CreateAPIView):
 
         response_serializer = RiderLocationSerializer(location)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class RiderDisconnectAPIView(CreateAPIView):
+    """
+    HTTP REST endpoint for riders to disconnect their active tracking session without changing online availability status.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsRider]
+    serializer_class = RiderDisconnectSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        location = disconnect_rider_session(rider=request.user)
+
+        response_serializer = RiderLocationSerializer(location) if location else None
+        return Response(
+            {
+                "message": "Rider websocket session disconnected successfully without altering online status.",
+                "data": response_serializer.data if response_serializer else None,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminRiderListTrackingAPIView(ListAPIView):

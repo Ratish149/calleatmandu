@@ -24,6 +24,7 @@ def update_rider_location(
     """
     Updates or creates a RiderLocation record and broadcasts the live GPS update
     via Django Channels to the Admin group and active Customer order groups.
+    Marks rider online (is_online=True).
     Only allows users with role='rider'.
     """
     if getattr(rider, "role", None) != "rider":
@@ -122,6 +123,25 @@ def toggle_rider_online_status(rider: User, is_online: bool) -> RiderLocation:
                 },
             },
         )
+
+    return location
+
+
+def disconnect_rider_session(rider: User) -> RiderLocation:
+    """
+    Disconnects active WebSocket connection for a rider and sets rider status to offline.
+    """
+    location = toggle_rider_online_status(rider=rider, is_online=False)
+
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f"rider_{rider.id}",
+            {
+                "type": "force_disconnect",
+            },
+        )
+        logger.info(f"Broadcast force disconnect event for rider #{rider.id}")
 
     return location
 

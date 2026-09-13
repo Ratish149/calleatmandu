@@ -3,6 +3,7 @@ from django.urls import path
 from tracking.views import (
     AdminRiderListTrackingAPIView,
     CustomerOrderTrackingAPIView,
+    RiderDisconnectAPIView,
     RiderToggleOnlineAPIView,
     RiderUpdateLocationAPIView,
 )
@@ -19,6 +20,11 @@ urlpatterns = [
         "tracking/toggle-online/",
         RiderToggleOnlineAPIView.as_view(),
         name="rider-toggle-online",
+    ),
+    path(
+        "tracking/disconnect/",
+        RiderDisconnectAPIView.as_view(),
+        name="rider-disconnect",
     ),
     path(
         "tracking/riders/",
