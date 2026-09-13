@@ -46,7 +46,10 @@ def update_rider_location(
     if not created:
         location.latitude = latitude
         location.longitude = longitude
-        location.save(update_fields=["latitude", "longitude", "last_updated_at"])
+        location.is_online = True
+        location.save(
+            update_fields=["latitude", "longitude", "is_online", "last_updated_at"]
+        )
 
     # Create historical breadcrumb record for route audit if location has changed significantly
     if save_history:
