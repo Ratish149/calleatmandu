@@ -28,17 +28,20 @@ class PromoCodeAdmin(ModelAdmin):
     list_display = [
         "code",
         "promo_type",
+        "scope",
         "amount",
+        "min_order_amount",
+        "max_discount_amount",
         "max_total_usage",
-        "max_usage_per_user",
         "current_usage_count",
         "is_active",
         "start_datetime",
         "end_datetime",
         "created_at",
     ]
-    list_filter = ["promo_type", "is_active", "created_at"]
+    list_filter = ["promo_type", "scope", "is_active", "created_at"]
     search_fields = ["code", "description"]
+    filter_horizontal = ["categories", "products"]
     ordering = ["-created_at"]
 
 

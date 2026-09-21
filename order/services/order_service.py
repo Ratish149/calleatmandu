@@ -87,7 +87,7 @@ class OrderService:
         # 5. Evaluate offer / promo code if provided
         discount_amount = 0.0
         offer_obj = None
-        promo_code_obj = None
+        delivery_fee = order_data.get("delivery_fee", 0.0)
 
         if promo_code_str or Offer.objects.filter(is_active=True).exists():
             formatted_cart_items = [
@@ -104,6 +104,7 @@ class OrderService:
             offer_res = OfferService.evaluate_cart_offer(
                 cart_items=formatted_cart_items,
                 cart_total=subtotal,
+                delivery_charge=delivery_fee,
                 promo_code_str=promo_code_str,
                 user=user if user and user.is_authenticated else None,
             )
@@ -118,7 +119,6 @@ class OrderService:
                         code__iexact=offer_res["promo_code"]
                     ).first()
 
-        delivery_fee = order_data.get("delivery_fee", 0.0)
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
         # 6. Create Order record

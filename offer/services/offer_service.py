@@ -24,7 +24,7 @@ class OfferService:
         return True, None
 
     @staticmethod
-    def is_promo_code_valid(promo_code, user=None, now=None):
+    def is_promo_code_valid(promo_code, user=None, cart_total=0.0, now=None):
         if not promo_code.is_active:
             return False, "Promo code is inactive."
 
@@ -39,23 +39,28 @@ class OfferService:
         if promo_code.max_total_usage and promo_code.current_usage_count >= promo_code.max_total_usage:
             return False, "Promo code maximum usage limit reached."
 
+        if promo_code.min_order_amount and cart_total < promo_code.min_order_amount:
+            return False, f"Minimum order total of Rs. {promo_code.min_order_amount} required to use this promo code."
+
         if user and user.is_authenticated:
-            user_redemptions = OfferRedemption.objects.filter(
+            has_redeemed = OfferRedemption.objects.filter(
                 promo_code=promo_code, user=user
-            ).count()
-            if user_redemptions >= promo_code.max_usage_per_user:
-                return False, f"You have already reached the max usage limit ({promo_code.max_usage_per_user}) for this promo code."
+            ).exists()
+            if has_redeemed:
+                return False, "You have already used this promo code."
 
         return True, None
 
     @classmethod
-    def check_promo_code_detail(cls, code_str, cart_total=0.0, user=None):
+    def check_promo_code_detail(cls, code_str, cart_total=0.0, cart_items=None, delivery_charge=0.0, user=None):
         """
         Validates a promo code string and returns its full detail and calculated discount.
         """
         now = timezone.now()
         try:
-            promo_code = PromoCode.objects.get(code__iexact=code_str.strip())
+            promo_code = PromoCode.objects.prefetch_related(
+                "categories", "products"
+            ).get(code__iexact=code_str.strip())
         except PromoCode.DoesNotExist:
             return {
                 "is_valid": False,
@@ -63,7 +68,9 @@ class OfferService:
                 "promo_code": None,
             }
 
-        is_valid, err_msg = cls.is_promo_code_valid(promo_code, user=user, now=now)
+        is_valid, err_msg = cls.is_promo_code_valid(
+            promo_code, user=user, cart_total=cart_total, now=now
+        )
         if not is_valid:
             return {
                 "is_valid": False,
@@ -73,12 +80,20 @@ class OfferService:
                     "code": promo_code.code,
                     "description": promo_code.description,
                     "promo_type": promo_code.promo_type,
+                    "scope": promo_code.scope,
                     "amount": promo_code.amount,
+                    "min_order_amount": promo_code.min_order_amount,
                     "is_active": promo_code.is_active,
                 },
             }
 
-        calculated_discount = promo_code.calculate_discount(cart_total) if cart_total > 0 else 0.0
+        calculated_discount = (
+            promo_code.calculate_discount(
+                cart_total=cart_total, cart_items=cart_items, delivery_charge=delivery_charge
+            )
+            if cart_total > 0 or delivery_charge > 0
+            else 0.0
+        )
         final_amount = max(0.0, round(cart_total - calculated_discount, 2)) if cart_total > 0 else 0.0
 
         return {
@@ -89,9 +104,11 @@ class OfferService:
                 "code": promo_code.code,
                 "description": promo_code.description,
                 "promo_type": promo_code.promo_type,
+                "scope": promo_code.scope,
                 "amount": promo_code.amount,
+                "min_order_amount": promo_code.min_order_amount,
+                "max_discount_amount": promo_code.max_discount_amount,
                 "max_total_usage": promo_code.max_total_usage,
-                "max_usage_per_user": promo_code.max_usage_per_user,
                 "current_usage_count": promo_code.current_usage_count,
                 "start_datetime": promo_code.start_datetime,
                 "end_datetime": promo_code.end_datetime,
@@ -101,7 +118,7 @@ class OfferService:
         }
 
     @classmethod
-    def evaluate_cart_offer(cls, cart_items, cart_total, promo_code_str=None, user=None):
+    def evaluate_cart_offer(cls, cart_items, cart_total, delivery_charge=0.0, promo_code_str=None, user=None):
         """
         Evaluates a promo code or active offer for a cart.
         """
@@ -109,9 +126,9 @@ class OfferService:
 
         if promo_code_str:
             try:
-                promo_code_obj = PromoCode.objects.get(
-                    code__iexact=promo_code_str
-                )
+                promo_code_obj = PromoCode.objects.prefetch_related(
+                    "categories", "products"
+                ).get(code__iexact=promo_code_str.strip())
             except PromoCode.DoesNotExist:
                 return {
                     "is_valid": False,
@@ -120,7 +137,9 @@ class OfferService:
                     "final_amount": cart_total,
                 }
 
-            is_code_valid, err_msg = cls.is_promo_code_valid(promo_code_obj, user=user, now=now)
+            is_code_valid, err_msg = cls.is_promo_code_valid(
+                promo_code_obj, user=user, cart_total=cart_total, now=now
+            )
             if not is_code_valid:
                 return {
                     "is_valid": False,
@@ -129,7 +148,9 @@ class OfferService:
                     "final_amount": cart_total,
                 }
 
-            discount_amount = promo_code_obj.calculate_discount(cart_total)
+            discount_amount = promo_code_obj.calculate_discount(
+                cart_total=cart_total, cart_items=cart_items, delivery_charge=delivery_charge
+            )
             final_amount = max(0.0, round(cart_total - discount_amount, 2))
 
             return {
@@ -142,6 +163,7 @@ class OfferService:
                 "final_amount": final_amount,
                 "reward_details": {
                     "promo_type": promo_code_obj.promo_type,
+                    "scope": promo_code_obj.scope,
                     "amount": promo_code_obj.amount,
                 },
             }

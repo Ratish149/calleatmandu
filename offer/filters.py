@@ -30,8 +30,20 @@ class OfferFilter(filters.FilterSet):
 class PromoCodeFilter(filters.FilterSet):
     code = filters.CharFilter(lookup_expr="icontains")
     promo_type = filters.ChoiceFilter(choices=PromoCode.PromoCodeType.choices)
+    scope = filters.ChoiceFilter(choices=PromoCode.ScopeType.choices)
     is_active = filters.BooleanFilter()
+    categories = filters.NumberFilter(field_name="categories__id")
+    min_order_amount_lte = filters.NumberFilter(
+        field_name="min_order_amount", lookup_expr="lte"
+    )
 
     class Meta:
         model = PromoCode
-        fields = ["code", "promo_type", "is_active"]
+        fields = [
+            "code",
+            "promo_type",
+            "scope",
+            "is_active",
+            "categories",
+            "min_order_amount_lte",
+        ]

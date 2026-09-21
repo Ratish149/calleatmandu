@@ -11,9 +11,13 @@ class PromoCodeSerializer(serializers.ModelSerializer):
             "code",
             "description",
             "promo_type",
+            "scope",
+            "categories",
+            "products",
             "amount",
+            "min_order_amount",
+            "max_discount_amount",
             "max_total_usage",
-            "max_usage_per_user",
             "current_usage_count",
             "start_datetime",
             "end_datetime",
@@ -28,6 +32,7 @@ class PromoCodeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         promo_type = attrs.get("promo_type", getattr(self.instance, "promo_type", None))
+        scope = attrs.get("scope", getattr(self.instance, "scope", None))
         amount = attrs.get("amount", getattr(self.instance, "amount", 0.0))
 
         if promo_type == PromoCode.PromoCodeType.PERCENTAGE:
@@ -40,13 +45,43 @@ class PromoCodeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "amount": "Discount amount must be greater than 0."
                 })
+        elif promo_type == PromoCode.PromoCodeType.DELIVERY_CHARGE:
+            if amount < 0:
+                raise serializers.ValidationError({
+                    "amount": "Delivery charge discount amount cannot be negative (0 for 100% free delivery)."
+                })
+
+        if scope == PromoCode.ScopeType.CATEGORY:
+            categories = attrs.get(
+                "categories", getattr(self.instance, "categories", None)
+            )
+            if categories is not None and len(categories) == 0:
+                raise serializers.ValidationError({
+                    "categories": "At least one category is required when scope is set to CATEGORY."
+                })
+        elif scope == PromoCode.ScopeType.PRODUCT:
+            products = attrs.get("products", getattr(self.instance, "products", None))
+            if products is not None and len(products) == 0:
+                raise serializers.ValidationError({
+                    "products": "At least one product is required when scope is set to PRODUCT."
+                })
 
         return attrs
+
+
+class CartItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    category_id = serializers.IntegerField(required=False, allow_null=True)
+    subcategory_id = serializers.IntegerField(required=False, allow_null=True)
+    price = serializers.FloatField(min_value=0.0)
+    quantity = serializers.IntegerField(min_value=1)
 
 
 class PromoCodeCheckSerializer(serializers.Serializer):
     code = serializers.CharField(required=True)
     cart_total = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    delivery_charge = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    cart_items = CartItemSerializer(many=True, required=False, default=list)
 
 
 class OfferSerializer(serializers.ModelSerializer):
@@ -182,19 +217,12 @@ class OfferSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CartItemSerializer(serializers.Serializer):
-    product_id = serializers.IntegerField()
-    category_id = serializers.IntegerField(required=False, allow_null=True)
-    subcategory_id = serializers.IntegerField(required=False, allow_null=True)
-    price = serializers.FloatField(min_value=0.0)
-    quantity = serializers.IntegerField(min_value=1)
-
-
 class OfferCheckSerializer(serializers.Serializer):
     promo_code = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
     cart_total = serializers.FloatField(min_value=0.0)
+    delivery_charge = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     cart_items = CartItemSerializer(many=True, required=False, default=list)
 
 

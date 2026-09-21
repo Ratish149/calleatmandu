@@ -45,10 +45,11 @@ class OfferRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 
 class PromoCodeListCreateAPIView(ListCreateAPIView):
-    queryset = PromoCode.objects.all()
+    queryset = PromoCode.objects.prefetch_related("categories", "products")
     serializer_class = PromoCodeSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = PromoCodeFilter
+    pagination_class = CustomPagination
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -57,7 +58,7 @@ class PromoCodeListCreateAPIView(ListCreateAPIView):
 
 
 class PromoCodeRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
-    queryset = PromoCode.objects.all()
+    queryset = PromoCode.objects.prefetch_related("categories", "products")
     serializer_class = PromoCodeSerializer
 
     def get_permissions(self):
@@ -79,12 +80,14 @@ class OfferCheckAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         cart_total = serializer.validated_data["cart_total"]
+        delivery_charge = serializer.validated_data.get("delivery_charge", 0.0)
         cart_items = serializer.validated_data.get("cart_items", [])
         promo_code = serializer.validated_data.get("promo_code")
 
         result = OfferService.evaluate_cart_offer(
             cart_items=cart_items,
             cart_total=cart_total,
+            delivery_charge=delivery_charge,
             promo_code_str=promo_code,
             user=request.user,
         )
@@ -100,18 +103,20 @@ class PromoCodeCheckAPIView(APIView):
     Check and validate a promo code, returning its details and calculated discount.
     """
 
-    permission_classes = [IsAuthenticated]
-
     def post(self, request, *args, **kwargs):
         serializer = PromoCodeCheckSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         code = serializer.validated_data["code"]
         cart_total = serializer.validated_data.get("cart_total", 0.0)
+        delivery_charge = serializer.validated_data.get("delivery_charge", 0.0)
+        cart_items = serializer.validated_data.get("cart_items", [])
 
         result = OfferService.check_promo_code_detail(
             code_str=code,
             cart_total=cart_total,
+            cart_items=cart_items,
+            delivery_charge=delivery_charge,
             user=request.user,
         )
 

@@ -9,26 +9,59 @@ class PromoCode(BaseModel):
     class PromoCodeType(models.TextChoices):
         AMOUNT = "AMOUNT", "Fixed Amount Discount"
         PERCENTAGE = "PERCENTAGE", "Percentage Discount"
+        DELIVERY_CHARGE = "DELIVERY_CHARGE", "Delivery Charge Discount / Free Delivery"
+
+    class ScopeType(models.TextChoices):
+        CART = "CART", "Entire Cart / Order"
+        CATEGORY = "CATEGORY", "Specific Category/Categories"
+        PRODUCT = "PRODUCT", "Specific Product(s)"
 
     code = models.CharField(max_length=50, unique=True, db_index=True)
     description = models.TextField(blank=True, null=True)
     promo_type = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=PromoCodeType.choices,
         default=PromoCodeType.AMOUNT,
         db_index=True,
     )
+    scope = models.CharField(
+        max_length=30,
+        choices=ScopeType.choices,
+        default=ScopeType.CART,
+        db_index=True,
+    )
+
+    # Scoped Targets
+    categories = models.ManyToManyField(
+        "product.Category",
+        blank=True,
+        related_name="promo_codes",
+        help_text="Categories targeted by this promo code.",
+    )
+    products = models.ManyToManyField(
+        "product.Product",
+        blank=True,
+        related_name="promo_codes",
+        help_text="Products targeted by this promo code.",
+    )
+
     amount = models.FloatField(
         default=0.0,
-        help_text="Discount value: amount in Rs. for AMOUNT type, or percentage rate (0-100) for PERCENTAGE type.",
+        help_text="Discount value: amount in Rs. for AMOUNT / DELIVERY_CHARGE type, or percentage rate (0-100) for PERCENTAGE type.",
+    )
+    min_order_amount = models.FloatField(
+        default=0.0,
+        help_text="Minimum order total required to apply this promo code.",
+    )
+    max_discount_amount = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Cap maximum discount amount for percentage offers",
     )
     max_total_usage = models.PositiveIntegerField(
         null=True,
         blank=True,
         help_text="Maximum times this promo code can be used in total",
-    )
-    max_usage_per_user = models.PositiveIntegerField(
-        default=1, help_text="Maximum times a single user can use this promo code"
     )
     current_usage_count = models.PositiveIntegerField(default=0)
     start_datetime = models.DateTimeField(null=True, blank=True)
@@ -39,25 +72,65 @@ class PromoCode(BaseModel):
         indexes = [
             models.Index(fields=["code", "is_active"]),
             models.Index(fields=["promo_type", "is_active"]),
+            models.Index(fields=["scope", "is_active"]),
             models.Index(fields=["is_active", "start_datetime", "end_datetime"]),
         ]
 
     def __str__(self):
         return f"{self.code} [{self.get_promo_type_display()}: {self.amount}]"
 
-    def calculate_discount(self, cart_total):
+    def calculate_discount(self, cart_total=0.0, cart_items=None, delivery_charge=0.0):
         """
-        Calculates discount amount for a given cart total based on promo_type (AMOUNT or PERCENTAGE).
+        Calculates discount amount based on promo_type (AMOUNT, PERCENTAGE, DELIVERY_CHARGE)
+        and target scope (CART, CATEGORY, PRODUCT).
         """
         if not self.is_active or cart_total <= 0:
             return 0.0
 
+        if self.min_order_amount and cart_total < self.min_order_amount:
+            return 0.0
+
+        if self.promo_type == self.PromoCodeType.DELIVERY_CHARGE:
+            if self.amount > 0:
+                discount = min(self.amount, delivery_charge)
+            else:
+                discount = delivery_charge
+            return round(discount, 2)
+
+        # Calculate eligible subtotal based on scope
+        if self.scope == self.ScopeType.CATEGORY and cart_items:
+            category_ids = (
+                set(self.categories.values_list("id", flat=True)) if self.pk else set()
+            )
+            eligible_subtotal = sum(
+                item.get("price", 0.0) * item.get("quantity", 1)
+                for item in cart_items
+                if item.get("category_id") in category_ids
+            )
+        elif self.scope == self.ScopeType.PRODUCT and cart_items:
+            target_product_ids = (
+                set(self.products.values_list("id", flat=True)) if self.pk else set()
+            )
+            eligible_subtotal = sum(
+                item.get("price", 0.0) * item.get("quantity", 1)
+                for item in cart_items
+                if item.get("product_id") in target_product_ids
+            )
+        else:
+            eligible_subtotal = cart_total
+
+        if eligible_subtotal <= 0:
+            return 0.0
+
         if self.promo_type == self.PromoCodeType.PERCENTAGE:
-            discount = (cart_total * self.amount) / 100.0
+            discount = (eligible_subtotal * self.amount) / 100.0
+            if self.max_discount_amount and discount > self.max_discount_amount:
+                discount = self.max_discount_amount
             return round(discount, 2)
         elif self.promo_type == self.PromoCodeType.AMOUNT:
-            discount = min(self.amount, cart_total)
+            discount = min(self.amount, eligible_subtotal)
             return round(discount, 2)
+
         return 0.0
 
 
@@ -224,5 +297,9 @@ class OfferRedemption(BaseModel):
         ]
 
     def __str__(self):
-        target = self.promo_code.code if self.promo_code else (self.offer.title if self.offer else "Discount")
+        target = (
+            self.promo_code.code
+            if self.promo_code
+            else (self.offer.title if self.offer else "Discount")
+        )
         return f"{self.user} redeemed {target}"
