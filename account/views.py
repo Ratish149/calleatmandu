@@ -209,19 +209,32 @@ class CustomerListCreateAPIView(ListCreateAPIView):
 class BranchListCreateView(ListCreateAPIView):
     """
     API view to list all branches or create a new branch.
+    GET is allowed for everyone. Write operations require authentication.
     """
 
     queryset = Branch.objects.all()
     serializer_class = BranchSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = BranchFilter
-    permission_classes = (AllowAny,)
+    search_fields = ["name"]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 class BranchRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
     """
     API view to retrieve, update or delete a branch instance.
+    GET is allowed for everyone. Write operations require authentication.
     """
 
     queryset = Branch.objects.all()
     serializer_class = BranchSerializer
-    permission_classes = (AllowAny,)
+    lookup_field = "slug"
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]

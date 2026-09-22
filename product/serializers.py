@@ -115,6 +115,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "price",
             "offer_price",
             "prepare_time",
+            "stock",
             "is_best_seller",
             "type",
             "image",
@@ -154,6 +155,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "price",
+            "cost_price",
             "offer_price",
             "type",
             "thumbnail_image",
@@ -165,6 +167,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "prepare_time",
             "extras",
             "images",
+            "stock",
             "created_at",
             "updated_at",
         ]
@@ -189,7 +192,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     Accepts a product, its extras, and additional images in a single request.
 
     multipart/form-data fields:
-      name, description, price, type, thumbnail_image, category, sub_category, is_best_seller, prepare_time — standard fields
+      name, description, price, type, thumbnail_image, category, sub_category, is_best_seller, prepare_time, stock — standard fields
       extras      — JSON string, e.g. '[{"name":"Extra Cheese","additional_price":50}]'
       images      — one or more image files (send multiple 'images' fields)
     """
@@ -213,6 +216,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "price",
+            "cost_price",
             "type",
             "thumbnail_image",
             "category",
@@ -221,6 +225,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "prepare_time",
             "extras",
             "images",
+            "stock",
         ]
 
     def validate_extras(self, value):

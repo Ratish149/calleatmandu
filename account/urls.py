@@ -1,6 +1,8 @@
 from django.urls import include, path
 
 from account.views import (
+    BranchListCreateView,
+    BranchRetrieveUpdateDestroyView,
     ChangePasswordView,
     CustomerListCreateAPIView,
     GoogleLoginView,
@@ -27,4 +29,10 @@ urlpatterns = [
         "customers/", CustomerListCreateAPIView.as_view(), name="customer-list-create"
     ),
     path("headless/", include("allauth.headless.urls")),
+    path("branches/", BranchListCreateView.as_view(), name="branch-list-create"),
+    path(
+        "branches/<slug:slug>/",
+        BranchRetrieveUpdateDestroyView.as_view(),
+        name="branch-detail",
+    ),
 ]

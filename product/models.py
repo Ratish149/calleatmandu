@@ -52,11 +52,13 @@ class Product(BaseModel):
     class ProductType(models.TextChoices):
         VEG = "VEG", "Veg"
         NON_VEG = "NON_VEG", "Non-Veg"
+        DRINK = "DRINK", "Drink"
 
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True, blank=True, null=True)
     description = models.TextField()
     price = models.FloatField()
+    cost_price = models.FloatField(default=0.0)
     type = models.CharField(
         max_length=20,
         choices=ProductType.choices,
@@ -75,6 +77,7 @@ class Product(BaseModel):
     prepare_time = models.CharField(
         max_length=10, null=True, blank=True, help_text="in minutes"
     )
+    stock = models.PositiveIntegerField(default=100)
     meta_title = models.CharField(max_length=255, null=True, blank=True)
     meta_description = models.TextField(null=True, blank=True)
 

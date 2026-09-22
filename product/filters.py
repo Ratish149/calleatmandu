@@ -41,6 +41,12 @@ class ProductFilter(filters.FilterSet):
     category = filters.CharFilter(field_name="category__slug")
     sub_category = filters.CharFilter(field_name="sub_category__slug")
     is_best_seller = filters.BooleanFilter()
+    in_stock = filters.BooleanFilter(method="filter_in_stock")
+    min_stock = filters.NumberFilter(field_name="stock", lookup_expr="gte")
+    min_price = filters.NumberFilter(field_name="price", lookup_expr="gte")
+    max_price = filters.NumberFilter(field_name="price", lookup_expr="lte")
+    min_cost_price = filters.NumberFilter(field_name="cost_price", lookup_expr="gte")
+    max_cost_price = filters.NumberFilter(field_name="cost_price", lookup_expr="lte")
     offer = filters.CharFilter(method="filter_by_offer")
     search = filters.CharFilter(method="filter_search")
 
@@ -52,9 +58,22 @@ class ProductFilter(filters.FilterSet):
             "category",
             "sub_category",
             "is_best_seller",
+            "in_stock",
+            "min_stock",
+            "min_price",
+            "max_price",
+            "min_cost_price",
+            "max_cost_price",
             "offer",
             "search",
         ]
+
+    def filter_in_stock(self, queryset, name, value):
+        if value is True:
+            return queryset.filter(stock__gt=0)
+        elif value is False:
+            return queryset.filter(stock__lte=0)
+        return queryset
 
     def filter_search(self, queryset, name, value):
         if not value:

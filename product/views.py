@@ -87,7 +87,13 @@ class SubcategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 
 class ProductListCreateAPIView(ListCreateAPIView):
-    queryset = Product.objects.select_related("category").all().order_by("-created_at")
+    queryset = (
+        Product.objects
+        .select_related("category", "sub_category")
+        .prefetch_related("extras")
+        .all()
+        .order_by("-created_at")
+    )
     serializer_class = ProductListSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = ProductFilter

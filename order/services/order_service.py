@@ -87,6 +87,7 @@ class OrderService:
         # 5. Evaluate offer / promo code if provided
         discount_amount = 0.0
         offer_obj = None
+        promo_code_obj = None
         delivery_fee = order_data.get("delivery_fee", 0.0)
 
         if promo_code_str or Offer.objects.filter(is_active=True).exists():

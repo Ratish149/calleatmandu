@@ -36,6 +36,8 @@ class ProductAdmin(ModelAdmin):
     list_display = [
         "name",
         "price",
+        "cost_price",
+        "stock",
         "type",
         "category",
         "sub_category",
