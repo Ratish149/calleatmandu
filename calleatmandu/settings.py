@@ -68,7 +68,10 @@ INSTALLED_APPS = [
     "nps_payment",
     "stats",
     "tracking",
+    "message",
 ]
+
+ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
 
 """ DATABASES = {
     "default": {
