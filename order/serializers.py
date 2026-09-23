@@ -103,11 +103,23 @@ class OrderCreateSerializer(serializers.Serializer):
         default=Order.PaymentType.COD,
         required=False,
     )
+    order_type = serializers.ChoiceField(
+        choices=Order.OrderType.choices,
+        default=Order.OrderType.DELIVERY,
+        required=False,
+        allow_null=True,
+    )
     transaction_id = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
+    delivery_fee = serializers.FloatField(
+        required=False, default=0.0, min_value=0.0
+    )
+    discount_amount = serializers.FloatField(
+        required=False, default=0.0, min_value=0.0
+    )
     is_paid = serializers.BooleanField(required=False, default=False)
-    items = OrderItemCreateSerializer(many=True, min_length=1)
+    items = OrderItemCreateSerializer(many=True)
 
 
 class POSOrderCreateSerializer(serializers.Serializer):
@@ -138,11 +150,23 @@ class POSOrderCreateSerializer(serializers.Serializer):
         default=Order.PaymentType.COD,
         required=False,
     )
+    order_type = serializers.ChoiceField(
+        choices=Order.OrderType.choices,
+        default=Order.OrderType.DINEIN,
+        required=False,
+        allow_null=True,
+    )
     transaction_id = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
+    delivery_fee = serializers.FloatField(
+        required=False, default=0.0, min_value=0.0
+    )
+    discount_amount = serializers.FloatField(
+        required=False, default=0.0, min_value=0.0
+    )
     is_paid = serializers.BooleanField(required=False, default=False)
-    items = OrderItemCreateSerializer(many=True, min_length=1)
+    items = OrderItemCreateSerializer(many=True)
 
 
 class OrderResponseSerializer(serializers.ModelSerializer):
@@ -180,6 +204,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "transaction_id",
             "is_paid",
             "status",
+            "order_type",
             "is_pos_order",
             "created_by",
             "created_by_name",
@@ -259,6 +284,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "transaction_id",
             "is_paid",
             "is_pos_order",
+            "order_type",
             "status",
             "created_by",
             "created_by_name",
@@ -373,9 +399,9 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
 
         if status_val == Order.OrderStatus.CANCELLED:
             if not comment_val or not comment_val.strip():
-                raise serializers.ValidationError(
-                    {"comment": "A comment/reason is required when cancelling an order."}
-                )
+                raise serializers.ValidationError({
+                    "comment": "A comment/reason is required when cancelling an order."
+                })
         return attrs
 
 
@@ -396,9 +422,10 @@ class PublicOrderUpdateSerializer(serializers.Serializer):
     payment_type = serializers.ChoiceField(
         choices=Order.PaymentType.choices, required=False
     )
-    status = serializers.ChoiceField(
-        choices=Order.OrderStatus.choices, required=False
+    order_type = serializers.ChoiceField(
+        choices=Order.OrderType.choices, required=False
     )
+    status = serializers.ChoiceField(choices=Order.OrderStatus.choices, required=False)
     transaction_id = serializers.CharField(
         max_length=100, required=False, allow_blank=True, allow_null=True
     )
@@ -408,4 +435,3 @@ class PublicOrderUpdateSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Optional comment for status change log.",
     )
-

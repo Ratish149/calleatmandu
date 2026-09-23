@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 
 from account.models import Branch
@@ -270,3 +271,79 @@ class BranchSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "slug", "created_at", "updated_at")
+
+
+class CustomerActivitySerializer(serializers.ModelSerializer):
+    """
+    Serializer representing customer details along with recent order activity:
+    - Core customer details (id, username, email, first_name, last_name, full_name, phone_number, branch)
+    - total_orders: Total count of non-cancelled orders placed by the customer
+    - last_order_date: Timestamp of the customer's most recent order
+    - is_active_customer: Boolean indicating whether the customer ordered within threshold (default: 15 days)
+    - activity_status: 'active' or 'inactive'
+    - days_since_last_order: Number of days elapsed since the most recent order (or null if never ordered)
+    - customer: Nested object of customer profile data
+    """
+
+    full_name = serializers.SerializerMethodField()
+    branch_name = serializers.CharField(
+        source="branch.name", read_only=True, default=None
+    )
+    total_orders = serializers.IntegerField(read_only=True)
+    last_order_date = serializers.DateTimeField(read_only=True, allow_null=True)
+    is_active_customer = serializers.BooleanField(read_only=True)
+    activity_status = serializers.SerializerMethodField()
+    days_since_last_order = serializers.SerializerMethodField()
+    customer = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "phone_number",
+            "role",
+            "branch",
+            "branch_name",
+            "date_joined",
+            "total_orders",
+            "last_order_date",
+            "is_active_customer",
+            "activity_status",
+            "days_since_last_order",
+            "customer",
+        )
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
+
+    def get_activity_status(self, obj):
+        return "active" if getattr(obj, "is_active_customer", False) else "inactive"
+
+    def get_days_since_last_order(self, obj):
+        last_order = getattr(obj, "last_order_date", None)
+        if last_order:
+            delta = timezone.now() - last_order
+            return max(0, delta.days)
+        return None
+
+    def get_customer(self, obj):
+        return {
+            "id": obj.id,
+            "username": obj.username,
+            "email": obj.email,
+            "first_name": obj.first_name,
+            "last_name": obj.last_name,
+            "full_name": self.get_full_name(obj),
+            "phone_number": obj.phone_number,
+            "role": obj.role,
+            "branch": obj.branch_id,
+            "branch_name": obj.branch.name if obj.branch else None,
+            "date_joined": obj.date_joined,
+        }

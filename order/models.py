@@ -36,6 +36,11 @@ class Order(BaseModel):
         COD = "COD", "Cash on Delivery"
         NPS = "NPS", "NPS Payment"
 
+    class OrderType(models.TextChoices):
+        DELIVERY = "DELIVERY", "Delivery"
+        TAKEAWAY = "TAKEAWAY", "Takeaway"
+        DINEIN = "DINEIN", "Dine in"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -114,6 +119,14 @@ class Order(BaseModel):
         help_text="Unique barcode number for scanning, e.g. 890123456789",
     )
     is_pos_order = models.BooleanField(default=False)
+    order_type = models.CharField(
+        max_length=20,
+        choices=OrderType.choices,
+        db_index=True,
+        null=True,
+        blank=True,
+        default=OrderType.DELIVERY,
+    )
 
     status = models.CharField(
         max_length=30,

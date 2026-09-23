@@ -12,11 +12,13 @@ from rest_framework.generics import (
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from account.filters import BranchFilter, UserFilter
+from account.filters import BranchFilter, CustomerActivityFilter, UserFilter
 from account.models import Branch
+from account.selectors import get_customer_activity_queryset
 from account.serializers import (
     BranchSerializer,
     ChangePasswordSerializer,
+    CustomerActivitySerializer,
     CustomerCreateSerializer,
     GoogleLoginSerializer,
     LoginSerializer,
@@ -204,6 +206,31 @@ class CustomerListCreateAPIView(ListCreateAPIView):
         customer = serializer.save()
         response_serializer = UserSerializer(customer)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class CustomerActivityListAPIView(ListAPIView):
+    """
+    API view to retrieve customer order activity and engagement:
+    - Active: Customers who placed an order within the last 15 days (customizable via ?days=).
+    - Inactive: Customers who have not ordered within 15 days or never placed an order.
+    Returns customer details, total orders count, last order date, active status flag, and days elapsed.
+    Supports filtering by ?status=active or ?status=inactive, ?branch=, and ?search=.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CustomerActivitySerializer
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = CustomerActivityFilter
+    search_fields = ["phone_number", "first_name", "last_name", "username", "email"]
+
+    def get_queryset(self):
+        try:
+            days = int(self.request.query_params.get("days", 15))
+        except (ValueError, TypeError):
+            days = 15
+
+        return get_customer_activity_queryset(days=days)
 
 
 class BranchListCreateView(ListCreateAPIView):

@@ -45,6 +45,7 @@ class ProductAdmin(ModelAdmin):
         "prepare_time",
         "created_at",
     ]
+    list_editable = ["cost_price"]
     list_filter = ["type", "is_best_seller", "category", "sub_category"]
     search_fields = ["name", "slug", "description"]
     prepopulated_fields = {"slug": ("name",)}

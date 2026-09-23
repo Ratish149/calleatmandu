@@ -90,3 +90,4 @@ class PeakHoursFilter(SalesStatsFilter):
                 created_at__date__gte=start, created_at__date__lte=today
             )
         return parent_qs
+

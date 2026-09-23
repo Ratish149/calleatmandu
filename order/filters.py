@@ -7,6 +7,7 @@ from order.models import Order
 class OrderFilter(filters.FilterSet):
     status = filters.ChoiceFilter(choices=Order.OrderStatus.choices)
     payment_type = filters.ChoiceFilter(choices=Order.PaymentType.choices)
+    order_type = filters.ChoiceFilter(choices=Order.OrderType.choices)
     is_paid = filters.BooleanFilter()
     transaction_id = filters.CharFilter(lookup_expr="exact")
     branch = filters.NumberFilter(field_name="branch__id")
@@ -22,6 +23,7 @@ class OrderFilter(filters.FilterSet):
         fields = [
             "status",
             "payment_type",
+            "order_type",
             "is_paid",
             "transaction_id",
             "branch",

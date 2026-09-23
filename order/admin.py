@@ -29,6 +29,7 @@ class OrderAdmin(ModelAdmin):
         "customer_name",
         "phone_number",
         "branch",
+        "order_type",
         "payment_type",
         "is_paid",
         "status",
@@ -37,7 +38,7 @@ class OrderAdmin(ModelAdmin):
         "barcode_number",
         "created_at",
     ]
-    list_filter = ["status", "payment_type", "is_paid", "branch", "created_at"]
+    list_filter = ["status", "order_type", "payment_type", "is_paid", "branch", "created_at"]
     search_fields = [
         "order_number",
         "transaction_id",

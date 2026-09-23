@@ -88,7 +88,14 @@ class OrderService:
         discount_amount = 0.0
         offer_obj = None
         promo_code_obj = None
-        delivery_fee = order_data.get("delivery_fee", 0.0)
+
+        payload_delivery_fee = order_data.get("delivery_fee")
+        delivery_fee = 0.0
+        if payload_delivery_fee is not None:
+            try:
+                delivery_fee = max(0.0, round(float(payload_delivery_fee), 2))
+            except (ValueError, TypeError):
+                delivery_fee = 0.0
 
         if promo_code_str or Offer.objects.filter(is_active=True).exists():
             formatted_cart_items = [
@@ -120,6 +127,18 @@ class OrderService:
                         code__iexact=offer_res["promo_code"]
                     ).first()
 
+        # If discount_amount is explicitly provided in the payload from frontend, save it
+        payload_discount = order_data.get("discount_amount")
+        if payload_discount is not None:
+            try:
+                parsed_discount = float(payload_discount)
+                if parsed_discount > 0:
+                    discount_amount = parsed_discount
+            except (ValueError, TypeError):
+                pass
+
+        discount_amount = round(min(discount_amount, subtotal), 2)
+
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
         # 6. Create Order record
@@ -139,6 +158,7 @@ class OrderService:
             offer=offer_obj,
             promo_code=promo_code_obj,
             payment_type=order_data.get("payment_type", Order.PaymentType.COD),
+            order_type=order_data.get("order_type", Order.OrderType.DELIVERY),
             transaction_id=order_data.get("transaction_id"),
             is_paid=order_data.get("is_paid", False),
         )
@@ -332,7 +352,27 @@ class OrderService:
                         code__iexact=offer_res["promo_code"]
                     ).first()
 
-        delivery_fee = order_data.get("delivery_fee", 0.0)
+        # If discount_amount is explicitly provided in the payload from frontend, save it
+        payload_discount = order_data.get("discount_amount")
+        if payload_discount is not None:
+            try:
+                parsed_discount = float(payload_discount)
+                if parsed_discount > 0:
+                    discount_amount = parsed_discount
+            except (ValueError, TypeError):
+                pass
+
+        discount_amount = round(min(discount_amount, subtotal), 2)
+
+        # Delivery fee from payload if provided
+        payload_delivery_fee = order_data.get("delivery_fee")
+        delivery_fee = 0.0
+        if payload_delivery_fee is not None:
+            try:
+                delivery_fee = max(0.0, round(float(payload_delivery_fee), 2))
+            except (ValueError, TypeError):
+                delivery_fee = 0.0
+
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
         # Create Order
@@ -356,6 +396,7 @@ class OrderService:
             promo_code=promo_code_obj,
             is_pos_order=True,
             payment_type=order_data.get("payment_type", Order.PaymentType.COD),
+            order_type=order_data.get("order_type", Order.OrderType.DINEIN),
             transaction_id=order_data.get("transaction_id"),
             is_paid=order_data.get("is_paid", False),
             status=Order.OrderStatus.CONFIRMED,

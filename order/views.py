@@ -1,18 +1,22 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import serializers, status
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.filters import SearchFilter
 from rest_framework.generics import (
     GenericAPIView,
+    ListAPIView,
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from account.models import User
 from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
 from common.utils import CustomPagination
 from order.filters import OrderFilter
 from order.models import Order
+from order.selectors import get_customer_orders_queryset
 from order.serializers import (
     AssignRiderSerializer,
     OrderCreateSerializer,
@@ -376,6 +380,9 @@ class PublicOrderUpdateAPIView(GenericAPIView):
         if "payment_type" in validated_data:
             order.payment_type = validated_data["payment_type"]
 
+        if "order_type" in validated_data:
+            order.order_type = validated_data["order_type"]
+
         if "transaction_id" in validated_data:
             order.transaction_id = validated_data["transaction_id"]
 
@@ -389,3 +396,53 @@ class PublicOrderUpdateAPIView(GenericAPIView):
         order.save()
 
         return Response(OrderResponseSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class CustomerOrderHistoryAPIView(ListAPIView):
+    """
+    API View to retrieve order history for a specific customer by customer ID.
+    - Accessible by staff, admin, and operational roles.
+    - Customers can view their own order history.
+    - Supports pagination (CustomPagination), search, and filtering via OrderFilter.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderResponseSerializer
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = OrderFilter
+    search_fields = [
+        "order_number",
+        "barcode_number",
+        "customer_name",
+        "phone_number",
+        "delivery_location",
+    ]
+
+    def get_queryset(self):
+        customer_id = self.kwargs.get("customer_id")
+        user = self.request.user
+
+        if not customer_id:
+            raise NotFound("Customer ID is required.")
+
+        if not User.objects.filter(id=customer_id).exists():
+            raise NotFound(f"Customer with ID {customer_id} does not exist.")
+
+        is_staff = (
+            user.is_superuser
+            or user.is_staff
+            or getattr(user, "role", None) in ALLOWED_STAFF_ROLES
+        )
+        if not is_staff and user.id != int(customer_id):
+            raise PermissionDenied(
+                "You do not have permission to view another customer's order history."
+            )
+
+        queryset = get_customer_orders_queryset(customer_id=customer_id)
+
+        # If rider, restrict to orders assigned to this rider
+        if getattr(user, "role", None) == "rider":
+            queryset = queryset.filter(assigned_to_rider=user)
+
+        return queryset

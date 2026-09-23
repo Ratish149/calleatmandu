@@ -4,6 +4,7 @@ from account.views import (
     BranchListCreateView,
     BranchRetrieveUpdateDestroyView,
     ChangePasswordView,
+    CustomerActivityListAPIView,
     CustomerListCreateAPIView,
     GoogleLoginView,
     LoginView,
@@ -27,6 +28,11 @@ urlpatterns = [
     ),
     path(
         "customers/", CustomerListCreateAPIView.as_view(), name="customer-list-create"
+    ),
+    path(
+        "customers/recent-active/",
+        CustomerActivityListAPIView.as_view(),
+        name="customer-recent-active",
     ),
     path("headless/", include("allauth.headless.urls")),
     path("branches/", BranchListCreateView.as_view(), name="branch-list-create"),
