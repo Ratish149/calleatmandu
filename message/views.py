@@ -37,18 +37,6 @@ def get_branch_id_from_request(request) -> Optional[Union[int, str]]:
     if not branch_val and request.user and request.user.is_authenticated:
         branch_val = getattr(request.user, "branch_id", None)
 
-    # Fallback to org_id for backward compatibility if present
-    if not branch_val:
-        branch_val = request.query_params.get("org_id") or request.headers.get(
-            "X-Organization-ID"
-        )
-        if (
-            not branch_val
-            and hasattr(request, "data")
-            and isinstance(request.data, dict)
-        ):
-            branch_val = request.data.get("org_id")
-
     return branch_val
 
 

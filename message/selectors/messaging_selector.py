@@ -28,7 +28,8 @@ def get_conversations_for_branch(
 def get_conversation_messages(conversation_id: str) -> QuerySet[Message]:
     """Retrieve all messages for a specific conversation, prefetching attachments and sent_by."""
     return (
-        Message.objects.filter(conversation_id=conversation_id)
+        Message.objects
+        .filter(conversation_id=conversation_id)
         .select_related("sent_by")
         .prefetch_related("attachments")
         .order_by("created_at")
@@ -51,7 +52,8 @@ def get_unread_counts_for_branch(
         return {}
 
     rows = (
-        Message.objects.filter(
+        Message.objects
+        .filter(
             conversation_id__in=branch_conversations,
             direction="INBOUND",
             is_read=False,
@@ -71,9 +73,3 @@ def get_linked_accounts_for_branch(
     if branch_id is not None:
         queryset = queryset.filter(branch_id=branch_id)
     return queryset.order_by("-created_at")
-
-
-# Backward compatibility aliases
-get_conversations_for_org = get_conversations_for_branch
-get_unread_counts_for_org = get_unread_counts_for_branch
-get_linked_accounts_for_org = get_linked_accounts_for_branch

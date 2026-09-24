@@ -59,9 +59,6 @@ class MessagingService:
 
         return conversation
 
-    # Alias for backward compatibility
-    assert_conversation_belongs_to_org = assert_conversation_belongs_to_branch
-
     def send_message(
         self,
         conversation_id: str,
