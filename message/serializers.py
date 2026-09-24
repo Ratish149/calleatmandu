@@ -4,11 +4,16 @@ from message.models import Attachment, BusinessAccount, Conversation, Message
 
 
 class BusinessAccountSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(
+        source="branch.name", read_only=True, default=None
+    )
+
     class Meta:
         model = BusinessAccount
         fields = [
             "id",
-            "organization_id",
+            "branch",
+            "branch_name",
             "zernio_account_id",
             "platform",
             "account_name",
@@ -49,6 +54,9 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     business_account = BusinessAccountSerializer(read_only=True)
+    branch_name = serializers.CharField(
+        source="branch.name", read_only=True, default=None
+    )
     latest_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
 
@@ -56,6 +64,8 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = [
             "id",
+            "branch",
+            "branch_name",
             "zernio_conversation_id",
             "zernio_account_id",
             "platform",
@@ -96,10 +106,10 @@ class LinkConversationSerializer(serializers.Serializer):
 
 
 class OAuthConnectURLQuerySerializer(serializers.Serializer):
-    organization_id = serializers.CharField(
+    branch_id = serializers.IntegerField(
         required=False,
-        default="default",
-        help_text="Organization ID initiating connection",
+        allow_null=True,
+        help_text="Branch ID initiating connection",
     )
     profile_id = serializers.CharField(
         required=False,

@@ -1,12 +1,10 @@
 import logging
 import secrets
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from message.models import (
@@ -32,15 +30,15 @@ class MessagingService:
     def __init__(self, zernio_service: Optional[ZernioService] = None):
         self.zernio_service = zernio_service or ZernioService()
 
-    def assert_conversation_belongs_to_org(
-        self, conversation_id: str, org_id: str
+    def assert_conversation_belongs_to_branch(
+        self, conversation_id: str, branch_id: Optional[Union[int, str]] = None
     ) -> Conversation:
-        """Verify that conversation exists and belongs to org_id via business_account.organization_id.
+        """Verify that conversation exists and optionally belongs to the branch.
 
-        Raises PermissionDenied if tenant mismatch occurs.
+        Raises PermissionDenied if branch mismatch occurs.
         """
         conversation = (
-            Conversation.objects.select_related("business_account")
+            Conversation.objects.select_related("business_account", "branch")
             .filter(id=conversation_id)
             .first()
         )
@@ -48,22 +46,32 @@ class MessagingService:
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
 
-        if (
-            not conversation.business_account
-            or conversation.business_account.organization_id != org_id
-        ):
-            raise PermissionDenied(
-                "You do not have access to this conversation"
+        if branch_id is not None:
+            conv_branch_id = conversation.branch_id or (
+                conversation.business_account.branch_id
+                if conversation.business_account
+                else None
             )
+            if conv_branch_id is not None and str(conv_branch_id) != str(branch_id):
+                raise PermissionDenied(
+                    "You do not have access to this conversation"
+                )
 
         return conversation
 
+    # Alias for backward compatibility
+    assert_conversation_belongs_to_org = assert_conversation_belongs_to_branch
+
     def send_message(
-        self, conversation_id: str, message_text: str, org_id: str, user=None
+        self,
+        conversation_id: str,
+        message_text: str,
+        branch_id: Optional[Union[int, str]] = None,
+        user=None,
     ) -> Dict[str, Any]:
         """Send an outbound message to a conversation via Zernio and save it in DB."""
-        conversation = self.assert_conversation_belongs_to_org(
-            conversation_id, org_id
+        conversation = self.assert_conversation_belongs_to_branch(
+            conversation_id, branch_id
         )
 
         try:
@@ -100,7 +108,10 @@ class MessagingService:
             raise ValueError(f"Failed to send message: {exc}")
 
     def get_connect_url(
-        self, platform: str, organization_id: str, app_url: Optional[str] = None
+        self,
+        platform: str,
+        branch_id: Optional[Union[int, str]] = None,
+        app_url: Optional[str] = None,
     ) -> Dict[str, str]:
         """Generate a secure OAuth nonce, save pending connection, and return authUrl from Zernio."""
         base_app_url = (
@@ -108,14 +119,14 @@ class MessagingService:
             or getattr(settings, "APP_URL", None)
             or "http://localhost:3000"
         )
-        profile_id = self.zernio_service.get_or_create_profile_id(organization_id)
+        profile_id = self.zernio_service.get_or_create_profile_id(branch_id)
 
         # Cryptographically secure 32 hex char nonce
         nonce = secrets.token_hex(16)
         expires_at = timezone.now() + timedelta(minutes=OAUTH_NONCE_TTL_MINUTES)
 
         PendingOAuthConnection.objects.create(
-            org_id=organization_id,
+            branch_id=branch_id,
             platform=platform,
             nonce=nonce,
             expires_at=expires_at,
@@ -138,7 +149,9 @@ class MessagingService:
 
     def handle_oauth_callback(self, query_params: Dict[str, str]) -> Dict[str, Any]:
         """Validate nonce and complete Zernio OAuth connection flow."""
-        platform = query_params.get("connected") or query_params.get("platform", "unknown")
+        platform = query_params.get("connected") or query_params.get(
+            "platform", "unknown"
+        )
         account_id = query_params.get("accountId") or query_params.get("profileId")
         username = query_params.get("username")
         nonce = query_params.get("nonce")
@@ -155,15 +168,17 @@ class MessagingService:
 
         if pending.expires_at < timezone.now():
             pending.delete()
-            raise ValueError("OAuth nonce has expired — please start connection again")
+            raise ValueError(
+                "OAuth nonce has expired — please start connection again"
+            )
 
-        org_id = pending.org_id
+        branch_id = pending.branch_id
         pending.delete()  # Single-use security deletion
 
         business_account, _ = BusinessAccount.objects.update_or_create(
             zernio_account_id=account_id,
             defaults={
-                "organization_id": org_id,
+                "branch_id": branch_id,
                 "platform": platform,
                 "account_name": username or None,
             },
@@ -173,23 +188,32 @@ class MessagingService:
             "success": True,
             "accountId": business_account.zernio_account_id,
             "platform": business_account.platform,
-            "organizationId": business_account.organization_id,
+            "branchId": business_account.branch_id,
         }
 
-    def unlink_account(self, platform: str, organization_id: str) -> Dict[str, bool]:
+    def unlink_account(
+        self, platform: str, branch_id: Optional[Union[int, str]] = None
+    ) -> Dict[str, bool]:
         """Unlink and delete social account from Zernio and DB."""
-        account = BusinessAccount.objects.filter(
-            organization_id=organization_id, platform=platform
-        ).first()
+        query = BusinessAccount.objects.filter(platform=platform)
+        if branch_id is not None:
+            query = query.filter(branch_id=branch_id)
+        account = query.first()
 
         if not account:
-            raise ValueError(f"No linked {platform} account found for this organization")
+            raise ValueError(
+                f"No linked {platform} account found for this branch"
+            )
 
         try:
             self.zernio_service.delete_account(account.zernio_account_id)
         except Exception as exc:
-            logger.error(f"Failed to delete Zernio account {account.zernio_account_id}: {exc}")
-            raise ValueError(f"Failed to unlink {platform} account from Zernio: {exc}")
+            logger.error(
+                f"Failed to delete Zernio account {account.zernio_account_id}: {exc}"
+            )
+            raise ValueError(
+                f"Failed to unlink {platform} account from Zernio: {exc}"
+            )
 
         account.delete()
         return {"success": True}
@@ -245,10 +269,20 @@ class MessagingService:
 
         # Prevent echoing outbound messages
         if sender_id and account_id and sender_id == account_id:
-            logger.debug(f"Ignoring echo outbound message from senderId: {sender_id}")
+            logger.debug(
+                f"Ignoring echo outbound message from senderId: {sender_id}"
+            )
             return payload
 
-        biz_account = BusinessAccount.objects.filter(zernio_account_id=account_id).first() if account_id else None
+        biz_account = (
+            BusinessAccount.objects.select_related("branch")
+            .filter(zernio_account_id=account_id)
+            .first()
+            if account_id
+            else None
+        )
+
+        branch = biz_account.branch if biz_account else None
 
         conversation, _ = Conversation.objects.update_or_create(
             zernio_conversation_id=zernio_conv_id,
@@ -258,6 +292,7 @@ class MessagingService:
                 "participant_name": participant_name or None,
                 "participant_avatar": participant_avatar or None,
                 "business_account": biz_account,
+                "branch": branch,
             },
         )
 
@@ -284,30 +319,49 @@ class MessagingService:
 
         return payload
 
-    def mark_conversation_as_read(self, conversation_id: str, org_id: str) -> Dict[str, bool]:
+    def mark_conversation_as_read(
+        self, conversation_id: str, branch_id: Optional[Union[int, str]] = None
+    ) -> Dict[str, bool]:
         """Mark all inbound messages in conversation as read."""
-        conversation = self.assert_conversation_belongs_to_org(conversation_id, org_id)
+        conversation = self.assert_conversation_belongs_to_branch(
+            conversation_id, branch_id
+        )
         Message.objects.filter(
             conversation=conversation, direction="INBOUND", is_read=False
         ).update(is_read=True)
         return {"success": True}
 
-    def link_conversation(self, conversation_id: str, applicant_id: str, org_id: str) -> Conversation:
+    def link_conversation(
+        self,
+        conversation_id: str,
+        applicant_id: str,
+        branch_id: Optional[Union[int, str]] = None,
+    ) -> Conversation:
         """Link applicant_id to a conversation."""
-        conversation = self.assert_conversation_belongs_to_org(conversation_id, org_id)
+        conversation = self.assert_conversation_belongs_to_branch(
+            conversation_id, branch_id
+        )
         conversation.applicant_id = applicant_id
         conversation.save(update_fields=["applicant_id", "updated_at"])
         return conversation
 
-    def unlink_conversation(self, conversation_id: str, org_id: str) -> Conversation:
+    def unlink_conversation(
+        self, conversation_id: str, branch_id: Optional[Union[int, str]] = None
+    ) -> Conversation:
         """Unlink applicant_id from a conversation."""
-        conversation = self.assert_conversation_belongs_to_org(conversation_id, org_id)
+        conversation = self.assert_conversation_belongs_to_branch(
+            conversation_id, branch_id
+        )
         conversation.applicant_id = None
         conversation.save(update_fields=["applicant_id", "updated_at"])
         return conversation
 
-    def delete_conversation(self, conversation_id: str, org_id: str) -> Dict[str, bool]:
+    def delete_conversation(
+        self, conversation_id: str, branch_id: Optional[Union[int, str]] = None
+    ) -> Dict[str, bool]:
         """Delete a conversation."""
-        conversation = self.assert_conversation_belongs_to_org(conversation_id, org_id)
+        conversation = self.assert_conversation_belongs_to_branch(
+            conversation_id, branch_id
+        )
         conversation.delete()
         return {"success": True}

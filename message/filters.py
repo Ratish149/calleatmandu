@@ -9,10 +9,11 @@ class ConversationFilter(django_filters.FilterSet):
     )
     applicant_id = django_filters.CharFilter(field_name="applicant_id")
     contact_id = django_filters.CharFilter(field_name="contact_id")
+    branch = django_filters.NumberFilter(field_name="branch_id")
 
     class Meta:
         model = Conversation
-        fields = ["platform", "applicant_id", "contact_id"]
+        fields = ["platform", "applicant_id", "contact_id", "branch"]
 
 
 class MessageFilter(django_filters.FilterSet):

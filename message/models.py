@@ -5,7 +5,13 @@ from common.models import BaseModel
 
 
 class BusinessAccount(BaseModel):
-    organization_id = models.CharField(max_length=255, db_index=True)
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.CASCADE,
+        related_name="business_accounts",
+        null=True,
+        blank=True,
+    )
     zernio_account_id = models.CharField(max_length=255, unique=True, db_index=True)
     platform = models.CharField(max_length=50, db_index=True)
     account_name = models.CharField(max_length=255, blank=True, null=True)
@@ -13,15 +19,22 @@ class BusinessAccount(BaseModel):
     class Meta:
         db_table = "business_accounts"
         indexes = [
-            models.Index(fields=["organization_id", "platform"]),
+            models.Index(fields=["branch", "platform"]),
         ]
 
     def __str__(self):
-        return f"{self.platform} ({self.account_name or self.zernio_account_id})"
+        branch_str = f"Branch {self.branch_id}" if self.branch_id else "Global"
+        return f"{self.platform} ({self.account_name or self.zernio_account_id}) - {branch_str}"
 
 
 class PendingOAuthConnection(models.Model):
-    org_id = models.CharField(max_length=255, db_index=True)
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.CASCADE,
+        related_name="pending_oauth_connections",
+        null=True,
+        blank=True,
+    )
     platform = models.CharField(max_length=50)
     nonce = models.CharField(max_length=255, unique=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -31,10 +44,17 @@ class PendingOAuthConnection(models.Model):
         db_table = "pending_oauth_connections"
 
     def __str__(self):
-        return f"PendingOAuthConnection {self.platform} - {self.org_id}"
+        return f"PendingOAuthConnection {self.platform} - Branch {self.branch_id}"
 
 
 class Conversation(BaseModel):
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="conversations",
+    )
     zernio_conversation_id = models.CharField(
         max_length=255, unique=True, db_index=True
     )
@@ -59,6 +79,7 @@ class Conversation(BaseModel):
     class Meta:
         db_table = "conversations"
         indexes = [
+            models.Index(fields=["branch", "updated_at"]),
             models.Index(fields=["business_account", "updated_at"]),
         ]
 
@@ -156,13 +177,19 @@ class Post(BaseModel):
         on_delete=models.CASCADE,
         related_name="posts",
     )
-    organization_id = models.CharField(max_length=255, db_index=True)
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.CASCADE,
+        related_name="posts",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         db_table = "posts"
         indexes = [
-            models.Index(fields=["organization_id", "status"]),
+            models.Index(fields=["branch", "status"]),
         ]
 
     def __str__(self):
-        return f"Post {self.id} ({self.status})"
+        return f"Post {self.id} ({self.status}) - Branch {self.branch_id}"

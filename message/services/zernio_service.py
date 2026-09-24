@@ -85,20 +85,23 @@ class ZernioService:
         """Delete / unlink a social account from Zernio."""
         return self.client.accounts.delete_account(account_id=account_id)
 
-    def get_or_create_profile_id(self, organization_id: str) -> str:
-        """Get or create Zernio Profile ID for an organization."""
+    def get_or_create_profile_id(self, branch_id: Optional[Any] = None) -> str:
+        """Get or create Zernio Profile ID for a branch."""
+        tag = f"Branch-{branch_id}" if branch_id else "Default"
         try:
             profiles_response = self.client.profiles.list_profiles()
             profiles = profiles_response.get("profiles", [])
             for profile in profiles:
-                if profile.get("name") == f"Org-{organization_id}":
+                if profile.get("name") == tag:
                     return profile.get("id") or profile.get("_id")
 
             # Create if not found
-            new_profile = self.client.profiles.create_profile(
-                name=f"Org-{organization_id}"
+            new_profile = self.client.profiles.create_profile(name=tag)
+            return (
+                new_profile.get("id")
+                or new_profile.get("_id")
+                or str(branch_id or "default")
             )
-            return new_profile.get("id") or new_profile.get("_id") or organization_id
         except Exception:
-            # Fallback to organization_id as profile_id if list/create is restricted
-            return organization_id
+            # Fallback to tag as profile_id if list/create is restricted
+            return tag
