@@ -10,7 +10,6 @@ from message.views import (
     ConversationMessagesAPIView,
     ConversationUnlinkAPIView,
     OAuthCallbackAPIView,
-    UnreadCountsAPIView,
     ZernioConnectAPIView,
     ZernioWebhookAPIView,
 )
@@ -48,11 +47,6 @@ urlpatterns = [
         name="conversation-unlink",
     ),
     # Accounts & Unread counts
-    path(
-        "unread-counts/",
-        UnreadCountsAPIView.as_view(),
-        name="unread-counts",
-    ),
     path(
         "accounts/",
         BusinessAccountListAPIView.as_view(),

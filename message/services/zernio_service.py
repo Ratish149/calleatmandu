@@ -85,6 +85,10 @@ class ZernioService:
         """Delete / unlink a social account from Zernio."""
         return self.client.accounts.delete_account(account_id=account_id)
 
+    def list_accounts(self) -> Dict[str, Any]:
+        """List all connected social accounts from Zernio."""
+        return self.client.accounts.list_accounts()
+
     def get_or_create_profile_id(self, branch_id: Optional[Any] = None) -> str:
         """Get or create Zernio Profile ID for a branch."""
         tag = f"Branch-{branch_id}" if branch_id else "Default"

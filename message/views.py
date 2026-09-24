@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Optional, Union
 
 from rest_framework import status
@@ -10,7 +11,6 @@ from message.selectors.messaging_selector import (
     get_conversation_messages,
     get_conversations_for_branch,
     get_linked_accounts_for_branch,
-    get_unread_counts_for_branch,
 )
 from message.serializers import (
     BusinessAccountSerializer,
@@ -23,9 +23,23 @@ from message.serializers import (
 )
 from message.services.messaging_service import MessagingService
 
+logger = logging.getLogger(__name__)
+
 
 def get_branch_id_from_request(request) -> Optional[Union[int, str]]:
-    """Extract branch ID from query params, request headers, request body, or authenticated user's branch."""
+    """Extract branch ID based on the authenticated user's token.
+
+    Prioritizes the logged in user's assigned branch from the authentication token (request.user.branch_id).
+    If the user has no assigned branch (e.g. admin) or is unauthenticated,
+    falls back to query parameters, request headers, or request body.
+    """
+    if (
+        request.user
+        and request.user.is_authenticated
+        and getattr(request.user, "branch_id", None)
+    ):
+        return request.user.branch_id
+
     branch_val = (
         request.query_params.get("branch_id")
         or request.query_params.get("branch")
@@ -33,9 +47,6 @@ def get_branch_id_from_request(request) -> Optional[Union[int, str]]:
     )
     if not branch_val and hasattr(request, "data") and isinstance(request.data, dict):
         branch_val = request.data.get("branch_id") or request.data.get("branch")
-
-    if not branch_val and request.user and request.user.is_authenticated:
-        branch_val = getattr(request.user, "branch_id", None)
 
     return branch_val
 
@@ -177,17 +188,6 @@ class ConversationUnlinkAPIView(APIView):
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class UnreadCountsAPIView(APIView):
-    """GET /api/messaging/unread-counts/?branch_id=X Get unread counts map for branch."""
-
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        branch_id = get_branch_id_from_request(request)
-        counts = get_unread_counts_for_branch(branch_id)
-        return Response(counts, status=status.HTTP_200_OK)
-
-
 class BusinessAccountListAPIView(APIView):
     """GET /api/messaging/accounts/?branch_id=X List connected business accounts."""
 
@@ -195,6 +195,14 @@ class BusinessAccountListAPIView(APIView):
 
     def get(self, request):
         branch_id = get_branch_id_from_request(request)
+        sync = request.query_params.get("sync", "false").lower() in ("true", "1")
+        if sync:
+            service = MessagingService()
+            try:
+                service.sync_accounts_from_zernio(branch_id=branch_id)
+            except Exception as exc:
+                logger.warning(f"Failed to sync accounts from Zernio: {exc}")
+
         accounts = get_linked_accounts_for_branch(branch_id)
         serializer = BusinessAccountSerializer(accounts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -207,9 +215,14 @@ class BusinessAccountUnlinkAPIView(APIView):
 
     def delete(self, request, platform: str):
         branch_id = get_branch_id_from_request(request)
+        account_id = request.query_params.get("account_id") or (
+            request.data.get("account_id") if isinstance(request.data, dict) else None
+        )
         service = MessagingService()
         try:
-            res = service.unlink_account(platform, branch_id)
+            res = service.unlink_account(
+                platform=platform, branch_id=branch_id, account_id=account_id
+            )
             return Response(res, status=status.HTTP_200_OK)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -263,7 +276,8 @@ class OAuthCallbackAPIView(APIView):
         service = MessagingService()
         try:
             params = {k: v for k, v in request.query_params.items()}
-            res = service.handle_oauth_callback(params)
+            branch_id = get_branch_id_from_request(request)
+            res = service.handle_oauth_callback(params, fallback_branch_id=branch_id)
             return Response(res, status=status.HTTP_200_OK)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -272,7 +286,8 @@ class OAuthCallbackAPIView(APIView):
         service = MessagingService()
         try:
             params = request.data if isinstance(request.data, dict) else {}
-            res = service.handle_oauth_callback(params)
+            branch_id = get_branch_id_from_request(request)
+            res = service.handle_oauth_callback(params, fallback_branch_id=branch_id)
             return Response(res, status=status.HTTP_200_OK)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
