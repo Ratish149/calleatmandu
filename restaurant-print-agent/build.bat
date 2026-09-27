@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
 echo ================================================================
 echo       Restaurant Thermal Print Agent - Windows Build Script      
@@ -8,63 +8,66 @@ echo.
 
 :: 1. Check Python
 python --version >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Python is not found in PATH!
-    echo Please install Python 3.12+ (64-bit) from https://www.python.org/
-    echo Make sure to check "Add Python to PATH" during installation.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto CHECK_PY_LAUNCHER
 
-echo [1/4] Checking Python environment...
-python -c "import sys; print(f'Detected Python {sys.version}')"
+set PYTHON_BIN=python
+goto START_BUILD
 
-:: 2. Install dependencies
-echo [2/4] Installing / Updating dependencies...
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+:CHECK_PY_LAUNCHER
+py --version >nul 2>&1
+if errorlevel 1 goto NO_PYTHON
+set PYTHON_BIN=py -3
+goto START_BUILD
 
-:: 3. Clean previous build directories
-echo [3/4] Cleaning previous build folders...
+:START_BUILD
+echo [1/3] Using Python:
+%PYTHON_BIN% --version
+echo.
+echo Installing requirements and PyInstaller...
+%PYTHON_BIN% -m pip install --upgrade pip
+%PYTHON_BIN% -m pip install -r requirements.txt
+%PYTHON_BIN% -m pip install pyinstaller
+
+echo.
+echo [2/3] Cleaning previous builds...
 if exist "dist" rmdir /s /q "dist"
 if exist "build" rmdir /s /q "build"
 
-:: 4. Build single executable with PyInstaller
-echo [4/4] Compiling RestaurantPrintAgent.exe with PyInstaller...
-pyinstaller --clean ^
-    --onefile ^
-    --noconsole ^
-    --name RestaurantPrintAgent ^
-    --icon=assets/icon.ico ^
-    --hidden-import=websockets ^
-    --hidden-import=websockets.legacy ^
-    --hidden-import=websockets.legacy.client ^
-    --hidden-import=win32print ^
-    --hidden-import=win32service ^
-    --hidden-import=win32serviceutil ^
-    --hidden-import=win32event ^
-    --hidden-import=servicemanager ^
-    --hidden-import=sqlite3 ^
-    agent.py
+echo.
+echo [3/3] Compiling RestaurantPrintAgent.exe...
+%PYTHON_BIN% -m PyInstaller --clean --onefile --noconsole --name RestaurantPrintAgent agent.py
 
-if %ERRORLEVEL% neq 0 (
-    echo.
-    echo ================================================================
-    echo [ERROR] PyInstaller build failed! Review output above.
-    echo ================================================================
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto BUILD_FAILED
 
 echo.
 echo ================================================================
-echo [SUCCESS] Build finished!
-echo Executable: dist\RestaurantPrintAgent.exe
+echo [SUCCESS] Build finished successfully!
+echo Executable is located at:
+echo   dist\RestaurantPrintAgent.exe
 echo.
-echo Next steps:
-echo 1. Copy 'dist\RestaurantPrintAgent.exe' to 'C:\RestaurantPrintAgent\'
-echo 2. Copy 'config.json.example' as 'C:\RestaurantPrintAgent\config.json'
-echo 3. Run 'install_service.bat' as Administrator
+echo Next step:
+echo Copy RestaurantPrintAgent.exe and config.json to C:\RestaurantPrintAgent\
 echo ================================================================
-echo.
 pause
+exit /b 0
+
+:NO_PYTHON
+echo ================================================================
+echo [ERROR] Python is not installed or not added to PATH!
+echo.
+echo Solution:
+echo 1. Download Python from: https://www.python.org/downloads/
+echo 2. Run the installer.
+echo 3. CRITICAL: Check the box at the bottom:
+echo    [X] Add python.exe to PATH
+echo 4. Complete installation, reopen Command Prompt, and run build.bat.
+echo ================================================================
+pause
+exit /b 1
+
+:BUILD_FAILED
+echo ================================================================
+echo [ERROR] PyInstaller build failed! Review the error output above.
+echo ================================================================
+pause
+exit /b 1
