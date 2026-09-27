@@ -139,8 +139,11 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
         validated_data = serializer.validated_data
         items_data = validated_data.pop("items")
         customer_user = validated_data.pop("user", None)
-        branch = validated_data.pop("branch", None)
+        validated_data.pop(
+            "branch", None
+        )  # ignored; branch is taken from the authenticated user
         created_by = request.user
+        branch = getattr(request.user, "branch", None)
 
         try:
             order = OrderService.create_pos_order(
