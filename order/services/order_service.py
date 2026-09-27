@@ -5,6 +5,7 @@ from offer.models import Offer, OfferRedemption, PromoCode
 from offer.services.offer_service import OfferService
 from order.models import Order, OrderItem, OrderItemExtra
 from order.services.branch_service import BranchAssignmentService
+from order.services.order_websocket_service import OrderWebSocketService
 from product.models import Product, ProductExtra
 
 
@@ -160,7 +161,7 @@ class OrderService:
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
         # 6. Create Order record
-        order = Order.objects.create(
+        order = Order(
             user=user if user and user.is_authenticated else None,
             branch=nearest_branch,
             customer_name=order_data["customer_name"],
@@ -180,6 +181,8 @@ class OrderService:
             transaction_id=order_data.get("transaction_id"),
             is_paid=order_data.get("is_paid", False),
         )
+        order._skip_signal_create = True
+        order.save()
 
         # 6b. Automatically link NPSTransaction if transaction_id is provided
         tx_id = order_data.get("transaction_id")
@@ -231,9 +234,13 @@ class OrderService:
                 promo_code_obj.current_usage_count += 1
                 promo_code_obj.save(update_fields=["current_usage_count"])
 
-        # 9. Trigger notification after transaction commit
+        # 9. Trigger notification and WebSocket broadcast after transaction commit
+        order_id = order.id
         transaction.on_commit(
             lambda: NotificationService.send_order_notification(order)
+        )
+        transaction.on_commit(
+            lambda: OrderWebSocketService.broadcast_order_created(order_id)
         )
 
         return order
@@ -394,7 +401,7 @@ class OrderService:
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
         # Create Order
-        order = Order.objects.create(
+        order = Order(
             user=customer_user
             if customer_user and customer_user.is_authenticated
             else None,
@@ -419,6 +426,8 @@ class OrderService:
             is_paid=order_data.get("is_paid", False),
             status=Order.OrderStatus.CONFIRMED,
         )
+        order._skip_signal_create = True
+        order.save()
 
         tx_id = order_data.get("transaction_id")
         if tx_id:
@@ -472,9 +481,13 @@ class OrderService:
                 promo_code_obj.current_usage_count += 1
                 promo_code_obj.save(update_fields=["current_usage_count"])
 
-        # Trigger notification
+        # Trigger notification and WebSocket broadcast
+        order_id = order.id
         transaction.on_commit(
             lambda: NotificationService.send_order_notification(order)
+        )
+        transaction.on_commit(
+            lambda: OrderWebSocketService.broadcast_order_created(order_id)
         )
 
         return order
@@ -568,3 +581,13 @@ class OrderService:
         )
 
         return order
+
+    @classmethod
+    def broadcast_order_created(cls, order_or_id):
+        """Dispatches order.created WebSocket event."""
+        return OrderWebSocketService.broadcast_order_created(order_or_id)
+
+    @classmethod
+    def broadcast_order_ready_for_pickup(cls, order_or_id):
+        """Dispatches order.ready_for_pickup WebSocket event."""
+        return OrderWebSocketService.broadcast_order_ready_for_pickup(order_or_id)

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import authenticate, get_user_model
 from django.utils import timezone
 from rest_framework import serializers
@@ -273,13 +275,89 @@ class BranchSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "slug", "created_at", "updated_at")
 
 
+class CustomerSerializer(serializers.ModelSerializer):
+    """
+    Serializer representing customer details along with order activity status:
+    - User details: id, username, email, first_name, last_name, full_name, phone_number, role, branch, branch_name, date_joined
+    - status: 'active' if customer placed an order recently (e.g. within 20 days), else 'inactive'
+    - activity_status: 'active' or 'inactive' (alias for status)
+    - is_active_customer: Boolean flag indicating if active
+    - last_order_date: Datetime of the customer's most recent order (or null if never ordered)
+    - total_orders: Total count of non-cancelled orders placed by the customer
+    - days_since_last_order: Number of days elapsed since the most recent order (or null if never ordered)
+    """
+
+    full_name = serializers.SerializerMethodField()
+    branch_name = serializers.CharField(
+        source="branch.name", read_only=True, default=None
+    )
+    activity_status = serializers.SerializerMethodField()
+    last_order_date = serializers.DateTimeField(read_only=True, allow_null=True)
+    total_orders = serializers.IntegerField(read_only=True, default=0)
+    days_since_last_order = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "phone_number",
+            "role",
+            "activity_status",
+            "last_order_date",
+            "total_orders",
+            "days_since_last_order",
+            "branch",
+            "branch_name",
+            "date_joined",
+        )
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
+
+    def get_activity_status(self, obj):
+        last_order_date = getattr(obj, "last_order_date", None)
+        if last_order_date is None and getattr(obj, "pk", None):
+            from order.models import Order
+
+            last_order_date = (
+                obj.orders
+                .exclude(status=Order.OrderStatus.CANCELLED)
+                .order_by("-created_at")
+                .values_list("created_at", flat=True)
+                .first()
+            )
+
+        if last_order_date:
+            return (
+                "active"
+                if timezone.now() - last_order_date <= timedelta(days=20)
+                else "inactive"
+            )
+        return "inactive"
+
+    def get_days_since_last_order(self, obj):
+        last_order = getattr(obj, "last_order_date", None)
+        if last_order:
+            delta = timezone.now() - last_order
+            return max(0, delta.days)
+        return None
+
+
 class CustomerActivitySerializer(serializers.ModelSerializer):
     """
     Serializer representing customer details along with recent order activity:
     - Core customer details (id, username, email, first_name, last_name, full_name, phone_number, branch)
     - total_orders: Total count of non-cancelled orders placed by the customer
     - last_order_date: Timestamp of the customer's most recent order
-    - is_active_customer: Boolean indicating whether the customer ordered within threshold (default: 15 days)
+    - is_active_customer: Boolean indicating whether the customer ordered within threshold (default: 20 days)
+    - status: 'active' or 'inactive'
     - activity_status: 'active' or 'inactive'
     - days_since_last_order: Number of days elapsed since the most recent order (or null if never ordered)
     - customer: Nested object of customer profile data
@@ -289,6 +367,7 @@ class CustomerActivitySerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(
         source="branch.name", read_only=True, default=None
     )
+    status = serializers.SerializerMethodField()
     total_orders = serializers.IntegerField(read_only=True)
     last_order_date = serializers.DateTimeField(read_only=True, allow_null=True)
     is_active_customer = serializers.BooleanField(read_only=True)
@@ -307,6 +386,7 @@ class CustomerActivitySerializer(serializers.ModelSerializer):
             "full_name",
             "phone_number",
             "role",
+            "status",
             "branch",
             "branch_name",
             "date_joined",
@@ -323,8 +403,11 @@ class CustomerActivitySerializer(serializers.ModelSerializer):
         name = f"{obj.first_name} {obj.last_name}".strip()
         return name if name else obj.username
 
-    def get_activity_status(self, obj):
+    def get_status(self, obj):
         return "active" if getattr(obj, "is_active_customer", False) else "inactive"
+
+    def get_activity_status(self, obj):
+        return self.get_status(obj)
 
     def get_days_since_last_order(self, obj):
         last_order = getattr(obj, "last_order_date", None)

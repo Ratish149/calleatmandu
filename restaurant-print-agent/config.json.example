@@ -1,0 +1,7 @@
+{
+  "server_url": "wss://giant-bent-instantly-formed.trycloudflare.com/ws/printer/15/",
+  "branch_id": 15,
+  "printer_name": "XP-80C",
+  "paper_width_mm": 80,
+  "reconnect_interval_max": 30
+}

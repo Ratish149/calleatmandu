@@ -7,12 +7,12 @@ from account.models import User
 from order.models import Order
 
 
-def get_customer_activity_queryset(days: int = 15):
+def get_customer_activity_queryset(days: int = 20):
     """
     Optimized queryset to retrieve all customers annotated with:
     - total_orders: Count of non-cancelled orders placed by the customer.
     - last_order_date: DateTime of the customer's most recent non-cancelled order.
-    - is_active_customer: Boolean indicating whether last_order_date >= now - days.
+    - is_active_customer: Boolean indicating whether last_order_date >= now - days (default: 20 days).
     """
     cutoff = timezone.now() - timedelta(days=days)
     non_cancelled = ~Q(orders__status=Order.OrderStatus.CANCELLED)

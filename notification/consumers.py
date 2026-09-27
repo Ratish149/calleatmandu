@@ -24,6 +24,35 @@ class OrderNotificationConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps({
                 "event": event.get("event", "order.placed"),
+                "order_number": event.get("order_number"),
+                "status": event.get("status"),
                 "data": event.get("data", {}),
             })
         )
+
+    async def order_ready_for_pickup(self, event):
+        """
+        Broadcasts ready for pickup payload to connected WebSocket clients.
+        """
+        await self.send(
+            text_data=json.dumps({
+                "event": event.get("event", "order.ready_for_pickup"),
+                "order_number": event.get("order_number"),
+                "status": event.get("status", "READY_FOR_PICKUP"),
+                "data": event.get("data", {}),
+            })
+        )
+
+    async def order_status_updated(self, event):
+        """
+        Broadcasts order status update payload to connected WebSocket clients.
+        """
+        await self.send(
+            text_data=json.dumps({
+                "event": event.get("event", "order.status_updated"),
+                "order_number": event.get("order_number"),
+                "status": event.get("status"),
+                "data": event.get("data", {}),
+            })
+        )
+

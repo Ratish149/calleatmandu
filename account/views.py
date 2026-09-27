@@ -20,6 +20,7 @@ from account.serializers import (
     ChangePasswordSerializer,
     CustomerActivitySerializer,
     CustomerCreateSerializer,
+    CustomerSerializer,
     GoogleLoginSerializer,
     LoginSerializer,
     SignupSerializer,
@@ -183,36 +184,41 @@ class GoogleLoginView(GenericAPIView):
 class CustomerListCreateAPIView(ListCreateAPIView):
     """
     API view to list all customers or create a new customer using full_name & phone_number.
+    Annotates customers with recent order activity status ('active' / 'inactive' within 20 days)
+    and their most recent order date.
     """
 
-    queryset = (
-        User.objects
-        .filter(role="customer")
-        .select_related("branch")
-        .order_by("-date_joined")
-    )
     filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = CustomerActivityFilter
     pagination_class = CustomPagination
-    search_fields = ["phone_number", "first_name", "last_name", "username"]
+    search_fields = ["phone_number", "first_name", "last_name", "username", "email"]
+
+    def get_queryset(self):
+        try:
+            days = int(self.request.query_params.get("days", 20))
+        except (ValueError, TypeError):
+            days = 20
+
+        return get_customer_activity_queryset(days=days)
 
     def get_serializer_class(self):
         if self.request.method == "POST":
             return CustomerCreateSerializer
-        return UserSerializer
+        return CustomerSerializer
 
     def create(self, request, *args, **kwargs):
         serializer = CustomerCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         customer = serializer.save()
-        response_serializer = UserSerializer(customer)
+        response_serializer = CustomerSerializer(customer)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class CustomerActivityListAPIView(ListAPIView):
     """
     API view to retrieve customer order activity and engagement:
-    - Active: Customers who placed an order within the last 15 days (customizable via ?days=).
-    - Inactive: Customers who have not ordered within 15 days or never placed an order.
+    - Active: Customers who placed an order within the last 20 days (customizable via ?days=).
+    - Inactive: Customers who have not ordered within 20 days or never placed an order.
     Returns customer details, total orders count, last order date, active status flag, and days elapsed.
     Supports filtering by ?status=active or ?status=inactive, ?branch=, and ?search=.
     """
@@ -226,9 +232,9 @@ class CustomerActivityListAPIView(ListAPIView):
 
     def get_queryset(self):
         try:
-            days = int(self.request.query_params.get("days", 15))
+            days = int(self.request.query_params.get("days", 20))
         except (ValueError, TypeError):
-            days = 15
+            days = 20
 
         return get_customer_activity_queryset(days=days)
 

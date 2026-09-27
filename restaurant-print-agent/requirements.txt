@@ -1,0 +1,6 @@
+# Restaurant Thermal Print Agent Dependencies
+# Minimal, lightweight headless agent (NO GUI dependencies)
+
+websockets>=12.0
+pywin32>=306; sys_platform == "win32"
+pyinstaller>=6.5.0
