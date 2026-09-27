@@ -54,6 +54,7 @@ class BranchAdmin(ModelAdmin):
         "name",
         "address",
         "phone",
+        "id",
         "opening_time",
         "closing_time",
         "created_at",

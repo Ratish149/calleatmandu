@@ -37,6 +37,10 @@ class Branch(BaseModel):
     address = models.CharField(max_length=255)
     latitude = models.FloatField()
     longitude = models.FloatField()
+    maximum_delivery_distance_km = models.DecimalField(
+        max_digits=6, decimal_places=2, default=10
+    )
+
     phone = models.CharField(
         max_length=15,
     )

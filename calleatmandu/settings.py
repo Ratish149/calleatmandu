@@ -69,18 +69,19 @@ INSTALLED_APPS = [
     "stats",
     "tracking",
     "message",
+    "delivery",
 ]
 
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
 
-""" DATABASES = {
+DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
     }
-} """
+}
 
-DATABASES = {
+""" DATABASES = {
     "default": {
         "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
         "NAME": os.getenv("DB_NAME", ""),
@@ -89,7 +90,7 @@ DATABASES = {
         "HOST": os.getenv("DB_HOST", ""),
         "PORT": os.getenv("DB_PORT", "5432"),
     }
-}
+} """
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
@@ -99,7 +100,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://handmade-acids-texture-emission.trycloudflare.com",
+    "https://showtimes-sanyo-written-uni.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -107,7 +108,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://handmade-acids-texture-emission.trycloudflare.com",
+    "https://showtimes-sanyo-written-uni.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 
