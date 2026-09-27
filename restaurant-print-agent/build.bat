@@ -35,7 +35,7 @@ if exist "build" rmdir /s /q "build"
 
 echo.
 echo [3/3] Compiling RestaurantPrintAgent.exe...
-%PYTHON_BIN% -m PyInstaller --clean --onefile --noconsole --name RestaurantPrintAgent agent.py
+%PYTHON_BIN% -m PyInstaller --clean --onefile --console --name RestaurantPrintAgent agent.py
 
 if errorlevel 1 goto BUILD_FAILED
 

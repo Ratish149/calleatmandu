@@ -1,24 +1,24 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 # Standard ESC/POS Control Byte Constants
 ESC = b"\x1b"
 GS = b"\x1d"
 
-INIT = ESC + b"@"                    # Reset and initialize printer
-ALIGN_LEFT = ESC + b"a\x00"          # Left justification
-ALIGN_CENTER = ESC + b"a\x01"        # Centered text
-ALIGN_RIGHT = ESC + b"a\x02"         # Right justification
+INIT = ESC + b"@"  # Reset and initialize printer
+ALIGN_LEFT = ESC + b"a\x00"  # Left justification
+ALIGN_CENTER = ESC + b"a\x01"  # Centered text
+ALIGN_RIGHT = ESC + b"a\x02"  # Right justification
 
-BOLD_ON = ESC + b"E\x01"             # Bold text enabled
-BOLD_OFF = ESC + b"E\x00"            # Bold text disabled
+BOLD_ON = ESC + b"E\x01"  # Bold text enabled
+BOLD_OFF = ESC + b"E\x00"  # Bold text disabled
 
-TXT_NORMAL = GS + b"!\x00"           # Standard font size
-TXT_DOUBLE_HEIGHT = GS + b"!\x01"    # 2x height
-TXT_DOUBLE_WIDTH = GS + b"!\x10"     # 2x width
-TXT_TITLE = GS + b"!\x11"            # 2x height + 2x width
+TXT_NORMAL = GS + b"!\x00"  # Standard font size
+TXT_DOUBLE_HEIGHT = GS + b"!\x01"  # 2x height
+TXT_DOUBLE_WIDTH = GS + b"!\x10"  # 2x width
+TXT_TITLE = GS + b"!\x11"  # 2x height + 2x width
 
-FEED_3 = b"\n\n\n"                   # Feed paper 3 lines
-CUT_PAPER = GS + b"VA\x03"           # Partial cut with 3-dot feed
+FEED_3 = b"\n\n\n"  # Feed paper 3 lines
+CUT_PAPER = GS + b"VA\x03"  # Partial cut with 3-dot feed
 
 
 def _get_columns(width_mm: int) -> int:
@@ -69,7 +69,12 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     resto_name = str(order.get("restaurant_name", "RESTAURANT"))
     order_type = str(order.get("order_type", "DELIVERY")).upper()
     created_at = str(order.get("created_at", ""))
-    notes = str(order.get("notes") or order.get("kitchen_notes") or "").strip()
+    notes = str(
+        order.get("notes")
+        or order.get("special_note")
+        or order.get("kitchen_notes")
+        or ""
+    ).strip()
 
     # Initialize
     buf.extend(INIT)
@@ -98,9 +103,9 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     items = order.get("items", [])
     buf.extend(BOLD_ON + TXT_DOUBLE_HEIGHT)
     for item in items:
-        name = str(item.get("name", "Unknown Item"))
+        name = str(item.get("product_name") or item.get("name", "Unknown Item"))
         qty = item.get("quantity", 1)
-        item_note = str(item.get("notes", "")).strip()
+        item_note = str(item.get("notes", "") or item.get("special_note", "")).strip()
 
         row_text = _two_cols(name, f"x{qty}", width)
         buf.extend(row_text.encode("latin1", "replace"))
@@ -140,12 +145,17 @@ def format_bill(order: Dict[str, Any], width_mm: int = 80) -> bytes:
 
     subtotal = str(order.get("subtotal", "0.00"))
     delivery_fee = str(order.get("delivery_fee", "0.00"))
-    discount = str(order.get("discount", "0.00"))
-    total = str(order.get("total", "0.00"))
+    discount = str(order.get("discount_amount") or order.get("discount", "0.00"))
+    total = str(order.get("total_amount") or order.get("total", "0.00"))
 
     customer = order.get("customer", {})
-    cust_name = str(customer.get("name", "")).strip()
-    cust_phone = str(customer.get("phone", "")).strip()
+    # OrderResponseSerializer sends flat fields: customer_name, phone_number
+    cust_name = str(
+        (customer.get("name") if customer else None) or order.get("customer_name", "")
+    ).strip()
+    cust_phone = str(
+        (customer.get("phone") if customer else None) or order.get("phone_number", "")
+    ).strip()
 
     # Initialize
     buf.extend(INIT)
@@ -153,7 +163,14 @@ def format_bill(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # Header
     buf.extend(ALIGN_CENTER)
     buf.extend(_line_sep(width, "="))
-    buf.extend(BOLD_ON + TXT_TITLE + resto_name.encode("latin1", "replace") + b"\n" + TXT_NORMAL + BOLD_OFF)
+    buf.extend(
+        BOLD_ON
+        + TXT_TITLE
+        + resto_name.encode("latin1", "replace")
+        + b"\n"
+        + TXT_NORMAL
+        + BOLD_OFF
+    )
     buf.extend(_line_sep(width, "="))
     buf.extend(b"\n")
 
@@ -179,19 +196,27 @@ def format_bill(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # Table Items
     items = order.get("items", [])
     for item in items:
-        name = str(item.get("name", "Item"))
+        name = str(item.get("product_name") or item.get("name", "Item"))
         qty = str(item.get("quantity", "1"))
-        item_total = str(item.get("total", item.get("price", "0.00")))
-        buf.extend(_three_cols(name, qty, item_total, width).encode("latin1", "replace"))
+        item_total = str(
+            item.get("subtotal") or item.get("total") or item.get("unit_price", "0.00")
+        )
+        buf.extend(
+            _three_cols(name, qty, item_total, width).encode("latin1", "replace")
+        )
 
     buf.extend(_line_sep(width, "-"))
 
     # Financial Breakdown
     buf.extend(_two_cols("Subtotal", subtotal, width).encode("latin1", "replace"))
     if delivery_fee and float(str(delivery_fee).replace(",", "")) > 0:
-        buf.extend(_two_cols("Delivery Fee", delivery_fee, width).encode("latin1", "replace"))
+        buf.extend(
+            _two_cols("Delivery Fee", delivery_fee, width).encode("latin1", "replace")
+        )
     if discount and float(str(discount).replace(",", "")) > 0:
-        buf.extend(_two_cols("Discount", f"-{discount}", width).encode("latin1", "replace"))
+        buf.extend(
+            _two_cols("Discount", f"-{discount}", width).encode("latin1", "replace")
+        )
 
     buf.extend(_line_sep(width, "-"))
 
@@ -220,7 +245,9 @@ def format_test(branch_id: Any, printer_name: str, width_mm: int = 80) -> bytes:
     buf.extend(INIT)
     buf.extend(ALIGN_CENTER)
     buf.extend(_line_sep(width, "="))
-    buf.extend(BOLD_ON + TXT_TITLE + b"RESTAURANT PRINT AGENT\n" + TXT_NORMAL + BOLD_OFF)
+    buf.extend(
+        BOLD_ON + TXT_TITLE + b"RESTAURANT PRINT AGENT\n" + TXT_NORMAL + BOLD_OFF
+    )
     buf.extend(_line_sep(width, "="))
     buf.extend(b"\n")
 
@@ -228,8 +255,14 @@ def format_test(branch_id: Any, printer_name: str, width_mm: int = 80) -> bytes:
 
     buf.extend(ALIGN_LEFT)
     buf.extend(_two_cols("Branch:", str(branch_id), width).encode("latin1", "replace"))
-    buf.extend(_two_cols("Printer:", str(printer_name), width).encode("latin1", "replace"))
-    buf.extend(_two_cols("Paper Width:", f"{width_mm}mm ({width} cols)", width).encode("latin1", "replace"))
+    buf.extend(
+        _two_cols("Printer:", str(printer_name), width).encode("latin1", "replace")
+    )
+    buf.extend(
+        _two_cols("Paper Width:", f"{width_mm}mm ({width} cols)", width).encode(
+            "latin1", "replace"
+        )
+    )
 
     buf.extend(_line_sep(width, "="))
     buf.extend(FEED_3)
