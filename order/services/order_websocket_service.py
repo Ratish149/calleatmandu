@@ -53,6 +53,14 @@ class OrderWebSocketService:
                 "order": order_data,
             },
         }
+        print(
+            f"\n[WS PRINTER] ───────────────────────────────────────────"
+            f"\n  → Printer Group : {group_name}"
+            f"\n  → Job ID        : {job_id}"
+            f"\n  → Job Type      : {job_type}"
+            f"\n  → Branch        : {branch_id}"
+            f"\n────────────────────────────────────────────────────────\n"
+        )
         return cls._send_to_channel_layer(group_name, payload)
 
     @classmethod
@@ -76,9 +84,20 @@ class OrderWebSocketService:
         try:
             channel_layer = get_channel_layer()
             if channel_layer:
+                print(
+                    f"\n[WS SEND] ──────────────────────────────────────────"
+                    f"\n  → Group   : {group_name}"
+                    f"\n  → Type    : {payload.get('type')}"
+                    f"\n  → Event   : {payload.get('event', 'N/A')}"
+                    f"\n  → Order#  : {payload.get('order_number', payload.get('data', {}).get('job_id', 'N/A'))}"
+                    f"\n  → Status  : {payload.get('status', 'N/A')}"
+                    f"\n────────────────────────────────────────────────────\n"
+                )
                 async_to_sync(channel_layer.group_send)(group_name, payload)
+                print(f"[WS SENT]  ✓ Successfully sent to group: '{group_name}'\n")
                 return True
         except Exception as e:
+            print(f"[WS ERROR] ✗ Failed to send to group '{group_name}': {e}")
             logger.error(
                 "Failed sending WebSocket message to group '%s': %s",
                 group_name,
@@ -101,7 +120,18 @@ class OrderWebSocketService:
             logger.warning(
                 "Could not broadcast order_created: Order '%s' not found.", order_or_id
             )
+            print(
+                f"[WS RECEIVE] broadcast_order_created — Order '{order_or_id}' not found, skipping broadcast."
+            )
             return False
+
+        print(
+            f"\n[WS RECEIVE] broadcast_order_created triggered"
+            f"\n  → Order#  : {order.order_number}"
+            f"\n  → Status  : {order.status}"
+            f"\n  → Branch  : {order.branch_id}"
+            f"\n  → Target Groups: [{cls.ORDER_GROUP_ALL}, orders_branch_{order.branch_id}, {cls.ORDER_NOTIFICATIONS_GROUP}, printer_branch_{order.branch_id}]"
+        )
 
         serialized_data = OrderResponseSerializer(order).data
         payload = {
@@ -140,9 +170,7 @@ class OrderWebSocketService:
         return True
 
     @classmethod
-    def broadcast_order_ready_for_pickup(
-        cls, order_or_id: Union[Order, int]
-    ) -> bool:
+    def broadcast_order_ready_for_pickup(cls, order_or_id: Union[Order, int]) -> bool:
         """
         Broadcasts complete order details when the order status changes to READY_FOR_PICKUP.
         Sends to:
@@ -157,7 +185,18 @@ class OrderWebSocketService:
                 "Could not broadcast order_ready_for_pickup: Order '%s' not found.",
                 order_or_id,
             )
+            print(
+                f"[WS RECEIVE] broadcast_order_ready_for_pickup — Order '{order_or_id}' not found, skipping broadcast."
+            )
             return False
+
+        print(
+            f"\n[WS RECEIVE] broadcast_order_ready_for_pickup triggered"
+            f"\n  → Order#  : {order.order_number}"
+            f"\n  → Status  : READY_FOR_PICKUP"
+            f"\n  → Branch  : {order.branch_id}"
+            f"\n  → Target Groups: [{cls.ORDER_GROUP_ALL}, orders_branch_{order.branch_id}, {cls.ORDER_NOTIFICATIONS_GROUP}, printer_branch_{order.branch_id}]"
+        )
 
         serialized_data = OrderResponseSerializer(order).data
         payload = {
@@ -207,12 +246,30 @@ class OrderWebSocketService:
         If target status is READY_FOR_PICKUP, delegates to broadcast_order_ready_for_pickup.
         Otherwise sends order.status_updated.
         """
+        print(
+            f"\n[WS RECEIVE] broadcast_order_status_update triggered"
+            f"\n  → Order   : {order_or_id}"
+            f"\n  → New Status : {new_status}"
+            f"\n  → Comment : {comment or 'N/A'}"
+        )
+
         if new_status == Order.OrderStatus.READY_FOR_PICKUP:
+            print(
+                "[WS RECEIVE]  ↳ Delegating to broadcast_order_ready_for_pickup (status=READY_FOR_PICKUP)"
+            )
             return cls.broadcast_order_ready_for_pickup(order_or_id)
 
         order = cls._resolve_order(order_or_id)
         if not order:
+            print(
+                f"[WS RECEIVE] broadcast_order_status_update — Order '{order_or_id}' not found, skipping broadcast."
+            )
             return False
+
+        print(
+            f"[WS RECEIVE]  → Order#  : {order.order_number}"
+            f"\n  → Target Groups: [{cls.ORDER_GROUP_ALL}, orders_branch_{order.branch_id}]"
+        )
 
         serialized_data = OrderResponseSerializer(order).data
         payload = {

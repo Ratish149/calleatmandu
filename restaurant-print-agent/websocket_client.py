@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, Optional
 
 import websockets
-
 from config import Config
 from database import db
 from formatter import format_bill, format_kot
@@ -65,7 +64,9 @@ class WebSocketPrintClient:
                 base_delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
                 delay = min(base_delay, max_delay)
 
-                logger.warning(f"WebSocket disconnected ({e}). Retrying in {delay} seconds...")
+                logger.warning(
+                    f"WebSocket disconnected ({e}). Retrying in {delay} seconds..."
+                )
                 attempt += 1
 
                 try:
@@ -107,21 +108,43 @@ class WebSocketPrintClient:
         """
         Executes print pipeline:
           Validation -> Duplicate check -> Format ESC/POS -> Spool -> Send ACK
+
+        Backend payload structure:
+          {
+            "type": "print_order",
+            "data": {
+              "job_id": ...,
+              "job_type": "KOT" | "BILL",
+              "order": { ... }
+            }
+          }
         """
-        job_id = msg.get("job_id")
-        job_type = str(msg.get("job_type", "KOT")).upper()
-        order = msg.get("order") or {}
+        # Fields are nested under "data" in the backend payload
+        data = msg.get("data") or {}
+        job_id = data.get("job_id") or msg.get(
+            "job_id"
+        )  # fallback to top-level for safety
+        job_type = str(data.get("job_type") or msg.get("job_type", "KOT")).upper()
+        order = data.get("order") or msg.get("order") or {}
         order_number = str(order.get("order_number", "UNKNOWN"))
+
+        logger.info(
+            f"[RECEIVE] print_order — job_id={job_id}, job_type={job_type}, order={order_number}"
+        )
 
         if not job_id:
             logger.error("Invalid print message: missing 'job_id'")
             return
 
-        logger.info(f"Received print job {job_id} ({job_type}) for Order #{order_number}")
+        logger.info(
+            f"Received print job {job_id} ({job_type}) for Order #{order_number}"
+        )
 
         # 1. Duplicate Protection Gate
         if db.already_printed(str(job_id)):
-            logger.info(f"Job {job_id} already printed previously. Sending duplicate ACK.")
+            logger.info(
+                f"Job {job_id} already printed previously. Sending duplicate ACK."
+            )
             await self._send_ack(job_id=job_id, success=True)
             return
 
@@ -144,21 +167,33 @@ class WebSocketPrintClient:
             return
 
         # 3. Send Bytes to Thermal Printer
-        logger.info(f"Printing {job_type} {order_number} to '{self.config.printer_name}'...")
-        success, err = print_raw(self.config.printer_name, raw_bytes, doc_name=f"{job_type}_{order_number}")
+        logger.info(
+            f"Printing {job_type} {order_number} to '{self.config.printer_name}'..."
+        )
+        success, err = print_raw(
+            self.config.printer_name, raw_bytes, doc_name=f"{job_type}_{order_number}"
+        )
 
         if success:
-            logger.info(f"Print successful: {job_type} for Order #{order_number} (Job ID: {job_id})")
+            logger.info(
+                f"Print successful: {job_type} for Order #{order_number} (Job ID: {job_id})"
+            )
             db.record_print(str(job_id), order_number=order_number, job_type=job_type)
             await self._send_ack(job_id=job_id, success=True)
         else:
             logger.error(f"Print failed for Order #{order_number}: {err}")
-            await self._send_ack(job_id=job_id, success=False, error=err or "Printer unavailable")
+            await self._send_ack(
+                job_id=job_id, success=False, error=err or "Printer unavailable"
+            )
 
-    async def _send_ack(self, job_id: Any, success: bool, error: Optional[str] = None) -> None:
+    async def _send_ack(
+        self, job_id: Any, success: bool, error: Optional[str] = None
+    ) -> None:
         """Sends print_ack JSON back to Django server."""
         if not self.ws or self.ws.closed:
-            logger.warning(f"Cannot send ACK for job {job_id}: WebSocket not connected.")
+            logger.warning(
+                f"Cannot send ACK for job {job_id}: WebSocket not connected."
+            )
             return
 
         ack = {

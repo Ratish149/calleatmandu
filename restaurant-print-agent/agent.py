@@ -1,10 +1,9 @@
 import argparse
 import asyncio
 import logging
-from logging.handlers import RotatingFileHandler
-import os
 import signal
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from config import Config, get_base_dir
@@ -82,19 +81,39 @@ def run_test_config(config: Config) -> None:
     print("Available Printers on this System:")
     if printers:
         for p in printers:
-            mark = "  [*MATCH*]" if p.lower() == config.printer_name.lower() else "  [ ]"
+            mark = (
+                "  [*MATCH*]" if p.lower() == config.printer_name.lower() else "  [ ]"
+            )
             print(f"{mark} {p}")
     else:
-        print("  (No printers detected. Ensure printer USB is connected and driver is installed.)")
+        print(
+            "  (No printers detected. Ensure printer USB is connected and driver is installed.)"
+        )
     print("=" * 60)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CallEatMandu Restaurant Background Thermal Print Agent")
-    parser.add_argument("--config", type=str, default=None, help="Path to custom config.json")
-    parser.add_argument("--test-printer", action="store_true", help="Send a test receipt to the configured printer")
-    parser.add_argument("--test-config", action="store_true", help="Validate config and check detected printers")
-    parser.add_argument("--foreground", action="store_true", help="Run with standard output console logging")
+    parser = argparse.ArgumentParser(
+        description="CallEatMandu Restaurant Background Thermal Print Agent"
+    )
+    parser.add_argument(
+        "--config", type=str, default=None, help="Path to custom config.json"
+    )
+    parser.add_argument(
+        "--test-printer",
+        action="store_true",
+        help="Send a test receipt to the configured printer",
+    )
+    parser.add_argument(
+        "--test-config",
+        action="store_true",
+        help="Validate config and check detected printers",
+    )
+    parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run with standard output console logging",
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -122,6 +141,7 @@ def main() -> None:
     logger.info("==================================================")
 
     from websocket_client import WebSocketPrintClient
+
     client = WebSocketPrintClient(config)
 
     # Signal handling for graceful shutdown
