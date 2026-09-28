@@ -103,13 +103,22 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
         .strip()
         .upper()
     )
-    customer = order.get("customer", {})
+    customer = order.get("customer") or {}
     cust_name = str(
-        (customer.get("name") if customer else None) or order.get("customer_name", "")
+        (customer.get("name") if isinstance(customer, dict) else None)
+        or order.get("customer_name")
+        or ""
     ).strip()
+    if cust_name.lower() in ("none", "null"):
+        cust_name = ""
+
     cust_phone = str(
-        (customer.get("phone") if customer else None) or order.get("phone_number", "")
+        (customer.get("phone") if isinstance(customer, dict) else None)
+        or order.get("phone_number")
+        or ""
     ).strip()
+    if cust_phone.lower() in ("none", "null"):
+        cust_phone = ""
 
     # Time parts
     time_str = ""
@@ -126,7 +135,10 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # App name — normal bold (same size as branch name)
     buf.extend(BOLD_ON + b"CallEatMandu\n" + BOLD_OFF)
 
-    buf.extend(BOLD_ON + TXT_TITLE + b"** KITCHEN TICKET **\n" + TXT_NORMAL + BOLD_OFF)
+    # Kitchen ticket title — reduced from TXT_TITLE to double height (cleaner, not stretched)
+    buf.extend(
+        BOLD_ON + TXT_DOUBLE_HEIGHT + b"** KITCHEN TICKET **\n" + TXT_NORMAL + BOLD_OFF
+    )
 
     # Branch name below header (bold, centered)
     buf.extend(BOLD_ON + branch_name.encode("latin1", "replace") + b"\n" + BOLD_OFF)
@@ -145,14 +157,15 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
 
     buf.extend(_line_sep(width, "-"))
 
-    # ── CUSTOMER section ─────────────────────────────────────────
-    buf.extend(ALIGN_LEFT)
-    buf.extend(BOLD_ON + b"CUSTOMER\n" + BOLD_OFF)
-    if cust_name:
-        buf.extend(f"  Name : {cust_name}\n".encode("latin1", "replace"))
-    if cust_phone:
-        buf.extend(f"  Phone: {cust_phone}\n".encode("latin1", "replace"))
-    buf.extend(_line_sep(width, "-"))
+    # ── CUSTOMER section (only print if name or phone exists) ──────
+    if cust_name or cust_phone:
+        buf.extend(ALIGN_LEFT)
+        buf.extend(BOLD_ON + b"CUSTOMER\n" + BOLD_OFF)
+        if cust_name:
+            buf.extend(f"  Name : {cust_name}\n".encode("latin1", "replace"))
+        if cust_phone:
+            buf.extend(f"  Phone: {cust_phone}\n".encode("latin1", "replace"))
+        buf.extend(_line_sep(width, "-"))
 
     # ── ITEMS section ─────────────────────────────────────────────
     items = order.get("items", [])
@@ -161,35 +174,41 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     )
     buf.extend(_line_sep(width, "-"))
 
-    for item in items:
-        name = str(item.get("product_name") or item.get("name", "Unknown Item"))
+    for idx, item in enumerate(items):
+        name = _clean_text(
+            str(item.get("product_name") or item.get("name", "Unknown Item"))
+        )
         qty = item.get("quantity", 1)
-        item_note = str(item.get("notes", "") or item.get("special_note", "")).strip()
+        item_note = _clean_text(
+            str(item.get("notes", "") or item.get("special_note", ""))
+        )
 
-        # Product name LEFT, quantity RIGHT in LARGE font (TXT_TITLE = 2x height + 2x width)
-        # Use width//2 because TXT_TITLE doubles each character's physical width
-        buf.extend(BOLD_ON + TXT_TITLE)
-        row_text = _two_cols(name, f"x{qty}", width // 2)
+        # Product name LEFT, quantity RIGHT in standard bold font
+        buf.extend(BOLD_ON)
+        row_text = _two_cols(name, f"x{qty}", width)
         buf.extend(row_text.encode("latin1", "replace"))
-        buf.extend(TXT_NORMAL + BOLD_OFF)
+        buf.extend(BOLD_OFF)
 
         # Extras (selected add-ons) — normal size, indented
         extras = item.get("selected_extras", [])
         for extra in extras:
-            extra_name = str(extra.get("extra_name", "")).strip()
+            extra_name = _clean_text(str(extra.get("extra_name", "")))
             extra_price = extra.get("additional_price", 0)
             if extra_name:
-                if extra_price and float(str(extra_price)) > 0:
+                price_val = _fmt_amount(extra_price)
+                if extra_price and float(str(extra_price).replace(",", "")) > 0:
                     buf.extend(
-                        f"  + {extra_name} (+{extra_price})\n".encode(
-                            "latin1", "replace"
-                        )
+                        f"  + {extra_name} (+{price_val})\n".encode("latin1", "replace")
                     )
                 else:
                     buf.extend(f"  + {extra_name}\n".encode("latin1", "replace"))
 
         if item_note:
             buf.extend(f"  * {item_note}\n".encode("latin1", "replace"))
+
+        # Clean vertical spacing between items
+        if idx < len(items) - 1:
+            buf.extend(b"\n")
 
     buf.extend(_line_sep(width, "-"))
 
