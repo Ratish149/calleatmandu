@@ -45,23 +45,31 @@ class OrderWebSocketService:
         printer_branch_{branch_id}
         """
         group_name = cls.get_printer_branch_group(branch_id)
-        payload = {
-            "type": "print_order",
-            "data": {
-                "job_id": job_id,
-                "job_type": job_type,
-                "order": order_data,
-            },
-        }
-        print(
-            f"\n[WS PRINTER] ───────────────────────────────────────────"
-            f"\n  → Printer Group : {group_name}"
-            f"\n  → Job ID        : {job_id}"
-            f"\n  → Job Type      : {job_type}"
-            f"\n  → Branch        : {branch_id}"
-            f"\n────────────────────────────────────────────────────────\n"
+        # payload = {
+        #     "type": "print_order",
+        #     "data": {
+        #         "job_id": job_id,
+        #         "job_type": job_type,
+        #         "order": order_data,
+        #     },
+        # }
+        # Temporarily commented out: do not send websocket messages to the printer
+        # print(
+        #     f"\n[WS PRINTER] ───────────────────────────────────────────"
+        #     f"\n  → Printer Group : {group_name}"
+        #     f"\n  → Job ID        : {job_id}"
+        #     f"\n  → Job Type      : {job_type}"
+        #     f"\n  → Branch        : {branch_id}"
+        #     f"\n────────────────────────────────────────────────────────\n"
+        # )
+        # return cls._send_to_channel_layer(group_name, payload)
+        logger.info(
+            "WebSocket message to printer group '%s' for job '%s' (%s) is temporarily disabled.",
+            group_name,
+            job_id,
+            job_type,
         )
-        return cls._send_to_channel_layer(group_name, payload)
+        return True
 
     @classmethod
     def _resolve_order(cls, order_or_id: Union[Order, int]) -> Optional[Order]:
@@ -153,14 +161,14 @@ class OrderWebSocketService:
         # 3. Notification group for backwards compatibility
         cls._send_to_channel_layer(cls.ORDER_NOTIFICATIONS_GROUP, payload)
 
-        # 4. Dedicated thermal printer agent: Dispatch KOT
-        if order.branch_id:
-            cls.broadcast_to_printer(
-                branch_id=order.branch_id,
-                job_id=f"kot_{order.order_number}",
-                job_type="KOT",
-                order_data=serialized_data,
-            )
+        # 4. Dedicated thermal printer agent: Dispatch KOT (Temporarily commented out)
+        # if order.branch_id:
+        #     cls.broadcast_to_printer(
+        #         branch_id=order.branch_id,
+        #         job_id=f"kot_{order.order_number}",
+        #         job_type="KOT",
+        #         order_data=serialized_data,
+        #     )
 
         logger.info(
             "WebSocket broadcasted 'order.created' and KOT print job for Order #%s (Branch: %s)",
@@ -173,66 +181,62 @@ class OrderWebSocketService:
     def broadcast_order_ready_for_pickup(cls, order_or_id: Union[Order, int]) -> bool:
         """
         Broadcasts complete order details when the order status changes to READY_FOR_PICKUP.
-        Sends to:
-          - 'orders_all': Global order stream (riders, managers, counter)
-          - 'orders_branch_<id>': Scoped order stream for the assigned branch
-          - 'order_notifications': Compatibility stream for notification subscribers
-          - 'printer_branch_<id>': Customer Bill to dedicated thermal printer agent
+        (Temporarily commented out / disabled per user request)
         """
-        order = cls._resolve_order(order_or_id)
-        if not order:
-            logger.warning(
-                "Could not broadcast order_ready_for_pickup: Order '%s' not found.",
-                order_or_id,
-            )
-            print(
-                f"[WS RECEIVE] broadcast_order_ready_for_pickup — Order '{order_or_id}' not found, skipping broadcast."
-            )
-            return False
-
-        print(
-            f"\n[WS RECEIVE] broadcast_order_ready_for_pickup triggered"
-            f"\n  → Order#  : {order.order_number}"
-            f"\n  → Status  : READY_FOR_PICKUP"
-            f"\n  → Branch  : {order.branch_id}"
-            f"\n  → Target Groups: [{cls.ORDER_GROUP_ALL}, orders_branch_{order.branch_id}, {cls.ORDER_NOTIFICATIONS_GROUP}, printer_branch_{order.branch_id}]"
-        )
-
-        serialized_data = OrderResponseSerializer(order).data
-        payload = {
-            "type": "order_ready_for_pickup",
-            "event": "order.ready_for_pickup",
-            "order_number": order.order_number,
-            "status": Order.OrderStatus.READY_FOR_PICKUP,
-            "data": serialized_data,
-        }
-
-        # 1. Global order feed
-        cls._send_to_channel_layer(cls.ORDER_GROUP_ALL, payload)
-
-        # 2. Branch-specific order feed
-        if order.branch_id:
-            branch_group = cls.get_branch_group(order.branch_id)
-            cls._send_to_channel_layer(branch_group, payload)
-
-        # 3. Notification group for backwards compatibility
-        cls._send_to_channel_layer(cls.ORDER_NOTIFICATIONS_GROUP, payload)
-
-        # 4. Dedicated thermal printer agent: Dispatch Customer Bill
-        if order.branch_id:
-            cls.broadcast_to_printer(
-                branch_id=order.branch_id,
-                job_id=f"bill_{order.order_number}",
-                job_type="BILL",
-                order_data=serialized_data,
-            )
-
         logger.info(
-            "WebSocket broadcasted 'order.ready_for_pickup' and Customer Bill for Order #%s (Branch: %s)",
-            order.order_number,
-            order.branch_id,
+            "WebSocket broadcast for 'order_ready_for_pickup' (Order: %s) is temporarily disabled.",
+            order_or_id,
+        )
+        print(
+            f"[WS RECEIVE] broadcast_order_ready_for_pickup for Order '{order_or_id}' skipped (temporarily disabled)."
         )
         return True
+
+        # order = cls._resolve_order(order_or_id)
+        # if not order:
+        #     logger.warning(
+        #         "Could not broadcast order_ready_for_pickup: Order '%s' not found.",
+        #         order_or_id,
+        #     )
+        #     print(
+        #         f"[WS RECEIVE] broadcast_order_ready_for_pickup — Order '{order_or_id}' not found, skipping broadcast."
+        #     )
+        #     return False
+
+        # print(
+        #     f"\n[WS RECEIVE] broadcast_order_ready_for_pickup triggered"
+        #     f"\n  → Order#  : {order.order_number}"
+        #     f"\n  → Status  : READY_FOR_PICKUP"
+        #     f"\n  → Branch  : {order.branch_id}"
+        #     f"\n  → Target Groups: [{cls.ORDER_GROUP_ALL}, orders_branch_{order.branch_id}, {cls.ORDER_NOTIFICATIONS_GROUP}, printer_branch_{order.branch_id}]"
+        # )
+
+        # serialized_data = OrderResponseSerializer(order).data
+        # payload = {
+        #     "type": "order_ready_for_pickup",
+        #     "event": "order.ready_for_pickup",
+        #     "order_number": order.order_number,
+        #     "status": Order.OrderStatus.READY_FOR_PICKUP,
+        #     "data": serialized_data,
+        # }
+
+        # # 1. Global order feed
+        # cls._send_to_channel_layer(cls.ORDER_GROUP_ALL, payload)
+
+        # # 2. Branch-specific order feed
+        # if order.branch_id:
+        #     branch_group = cls.get_branch_group(order.branch_id)
+        #     cls._send_to_channel_layer(branch_group, payload)
+
+        # # 3. Notification group for backwards compatibility
+        # cls._send_to_channel_layer(cls.ORDER_NOTIFICATIONS_GROUP, payload)
+
+        # logger.info(
+        #     "WebSocket broadcasted 'order.ready_for_pickup' for Order #%s (Branch: %s)",
+        #     order.order_number,
+        #     order.branch_id,
+        # )
+        # return True
 
     @classmethod
     def broadcast_order_status_update(
@@ -255,9 +259,9 @@ class OrderWebSocketService:
 
         if new_status == Order.OrderStatus.READY_FOR_PICKUP:
             print(
-                "[WS RECEIVE]  ↳ Delegating to broadcast_order_ready_for_pickup (status=READY_FOR_PICKUP)"
+                "[WS RECEIVE]  ↳ Status is READY_FOR_PICKUP — WebSocket broadcast skipped (temporarily disabled)"
             )
-            return cls.broadcast_order_ready_for_pickup(order_or_id)
+            return True
 
         order = cls._resolve_order(order_or_id)
         if not order:
