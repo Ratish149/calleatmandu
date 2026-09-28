@@ -36,7 +36,11 @@ if exist "%EXE_PATH%" goto INSTALL_EXE
 goto CHECK_PYTHON
 
 :INSTALL_EXE
-echo [1/3] Registering Windows Service using RestaurantPrintAgent.exe...
+echo [1/4] Killing any existing RestaurantPrintAgent processes...
+taskkill /F /IM RestaurantPrintAgent.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+
+echo [2/4] Registering Windows Service using RestaurantPrintAgent.exe...
 sc stop RestaurantPrintAgent >nul 2>&1
 sc delete RestaurantPrintAgent >nul 2>&1
 timeout /t 2 /nobreak >nul
@@ -45,10 +49,14 @@ sc create RestaurantPrintAgent binPath= "\"%EXE_PATH%\"" start= auto DisplayName
 sc description RestaurantPrintAgent "CallEatMandu background thermal printing agent for KOT and Customer Bills."
 sc failure RestaurantPrintAgent reset= 86400 actions= restart/5000/restart/10000/restart/30000
 
-echo [2/3] Service registered successfully.
-echo [3/3] Starting RestaurantPrintAgent service...
+echo [3/4] Service registered successfully.
+echo [4/4] Starting RestaurantPrintAgent service (1 instance only)...
 net start RestaurantPrintAgent
+
+echo.
+tasklist | findstr RestaurantPrintAgent
 goto DONE
+
 
 :CHECK_PYTHON
 python --version >nul 2>&1
