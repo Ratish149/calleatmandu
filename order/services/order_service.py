@@ -297,13 +297,23 @@ class OrderService:
         - `is_pos_order`: Set to True automatically.
         - `delivery_location`, `latitude`, `longitude`: Derived from branch (or POS counter defaults).
         """
-        # Determine customer_name and phone_number from customer_user
-        if customer_user:
+        # Determine customer_name and phone_number from payload or customer_user
+        raw_customer_name = str(order_data.get("customer_name") or "").strip()
+        raw_phone_number = str(order_data.get("phone_number") or "").strip()
+
+        if raw_customer_name:
+            customer_name = raw_customer_name
+        elif customer_user:
             full_name = customer_user.get_full_name().strip()
             customer_name = full_name if full_name else customer_user.username
-            phone_number = getattr(customer_user, "phone_number", "") or ""
         else:
             customer_name = "POS Customer"
+
+        if raw_phone_number:
+            phone_number = raw_phone_number
+        elif customer_user:
+            phone_number = getattr(customer_user, "phone_number", "") or "N/A"
+        else:
             phone_number = "N/A"
 
         # Determine target branch
@@ -311,15 +321,40 @@ class OrderService:
         if not assigned_branch and hasattr(created_by, "branch"):
             assigned_branch = created_by.branch
 
-        # Determine location parameters from branch or defaults
-        if assigned_branch:
+        # Determine location parameters from payload, branch, or defaults
+        raw_delivery_location = str(order_data.get("delivery_location") or "").strip()
+        if raw_delivery_location:
+            delivery_location = raw_delivery_location
+        elif assigned_branch:
             delivery_location = assigned_branch.address or "POS Counter"
-            lat = assigned_branch.latitude or 0.0
-            lon = assigned_branch.longitude or 0.0
         else:
             delivery_location = "POS Counter"
-            lat = 0.0
-            lon = 0.0
+
+        lat = order_data.get("latitude")
+        if lat is None:
+            lat = (
+                assigned_branch.latitude
+                if (assigned_branch and assigned_branch.latitude is not None)
+                else 0.0
+            )
+        else:
+            try:
+                lat = float(lat)
+            except (ValueError, TypeError):
+                lat = 0.0
+
+        lon = order_data.get("longitude")
+        if lon is None:
+            lon = (
+                assigned_branch.longitude
+                if (assigned_branch and assigned_branch.longitude is not None)
+                else 0.0
+            )
+        else:
+            try:
+                lon = float(lon)
+            except (ValueError, TypeError):
+                lon = 0.0
 
         promo_code_str = order_data.get("promo_code")
 

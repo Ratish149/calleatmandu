@@ -133,8 +133,8 @@ class OrderCreateSerializer(serializers.Serializer):
 class POSOrderCreateSerializer(serializers.Serializer):
     """
     Serializer to create an order via POS counter.
-    Does not require customer_name, phone_number, delivery_location, latitude, or longitude.
-    Optionally accepts a customer User instance (via user ID) to extract customer details.
+    Optionally accepts a customer User instance (via user ID) or customer_name and phone_number directly,
+    as well as delivery_location, latitude, and longitude for delivery orders.
     """
 
     user = serializers.PrimaryKeyRelatedField(
@@ -148,6 +148,37 @@ class POSOrderCreateSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
         help_text="Optional Branch ID. Defaults to staff user's assigned branch if omitted.",
+    )
+    customer_name = serializers.CharField(
+        max_length=150,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Optional customer name. If omitted and user is provided, extracted from user.",
+    )
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Optional customer phone number. If omitted and user is provided, extracted from user.",
+    )
+    delivery_location = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Optional delivery location for takeaway/delivery orders.",
+    )
+    latitude = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Optional delivery latitude.",
+    )
+    longitude = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Optional delivery longitude.",
     )
     special_note = serializers.CharField(required=False, allow_blank=True, default="")
     promo_code = serializers.CharField(
@@ -457,9 +488,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(
         source="user.username", read_only=True, default=None
     )
-    user_role = serializers.CharField(
-        source="user.role", read_only=True, default=None
-    )
+    user_role = serializers.CharField(source="user.role", read_only=True, default=None)
     order_number = serializers.CharField(
         source="order.order_number", read_only=True, default=None
     )
@@ -495,6 +524,11 @@ class ActivityLogSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        if request and request.user and request.user.is_authenticated and "user" not in attrs:
+        if (
+            request
+            and request.user
+            and request.user.is_authenticated
+            and "user" not in attrs
+        ):
             attrs["user"] = request.user
         return attrs
