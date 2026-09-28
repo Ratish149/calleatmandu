@@ -71,8 +71,8 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     order_type = str(order.get("order_type", "DELIVERY")).upper()
     created_at = str(order.get("created_at", ""))
     notes = str(
-        order.get("notes")
-        or order.get("special_note")
+        order.get("special_note")
+        or order.get("notes")
         or order.get("kitchen_notes")
         or ""
     ).strip()
@@ -135,6 +135,17 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
         row_text = _two_cols(name, f"x{qty}", width // 2)
         buf.extend(row_text.encode("latin1", "replace"))
         buf.extend(TXT_NORMAL + BOLD_OFF)
+
+        # Extras (selected add-ons) — normal size, indented
+        extras = item.get("selected_extras", [])
+        for extra in extras:
+            extra_name = str(extra.get("extra_name", "")).strip()
+            extra_price = extra.get("additional_price", 0)
+            if extra_name:
+                if extra_price and float(str(extra_price)) > 0:
+                    buf.extend(f"  + {extra_name} (+{extra_price})\n".encode("latin1", "replace"))
+                else:
+                    buf.extend(f"  + {extra_name}\n".encode("latin1", "replace"))
 
         if item_note:
             buf.extend(f"  * {item_note}\n".encode("latin1", "replace"))
