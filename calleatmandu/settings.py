@@ -100,7 +100,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://meters-tobago-discounted-relocation.trycloudflare.com",
+    "https://teams-fat-travis-roof.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -108,7 +108,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://meters-tobago-discounted-relocation.trycloudflare.com",
+    "https://teams-fat-travis-roof.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 
@@ -120,6 +120,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "common.middleware.CurrentUserMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",

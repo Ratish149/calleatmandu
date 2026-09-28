@@ -3,7 +3,13 @@ from rest_framework import serializers
 
 from account.models import Branch
 from account.serializers import BranchSerializer
-from order.models import Order, OrderItem, OrderItemExtra, OrderStatusHistory
+from order.models import (
+    ActivityLog,
+    Order,
+    OrderItem,
+    OrderItemExtra,
+    OrderStatusHistory,
+)
 
 User = get_user_model()
 
@@ -435,3 +441,60 @@ class PublicOrderUpdateSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Optional comment for status change log.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Activity Log
+# ---------------------------------------------------------------------------
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    """
+    Serializer for recording and retrieving system activity logs.
+    Includes resolved user and order details.
+    """
+
+    user_username = serializers.CharField(
+        source="user.username", read_only=True, default=None
+    )
+    user_role = serializers.CharField(
+        source="user.role", read_only=True, default=None
+    )
+    order_number = serializers.CharField(
+        source="order.order_number", read_only=True, default=None
+    )
+
+    class Meta:
+        model = ActivityLog
+        fields = [
+            "id",
+            "user",
+            "user_username",
+            "user_role",
+            "action_type",
+            "entity_type",
+            "entity_name",
+            "record_id",
+            "record_repr",
+            "order",
+            "order_number",
+            "description",
+            "changes",
+            "ip_address",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "user_username",
+            "user_role",
+            "order_number",
+        ]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated and "user" not in attrs:
+            attrs["user"] = request.user
+        return attrs

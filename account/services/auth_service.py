@@ -68,6 +68,7 @@ def generate_tokens_for_user(user: User) -> dict:
     refresh["name"] = user.get_full_name()
     refresh["phone_number"] = user.phone_number
     refresh["user_id"] = user.id
+    refresh["branch_id"] = user.branch_id if getattr(user, "branch_id", None) else None
 
     return {
         "refresh": str(refresh),

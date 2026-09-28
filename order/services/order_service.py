@@ -3,7 +3,8 @@ from django.db import transaction
 from notification.services.notification_service import NotificationService
 from offer.models import Offer, OfferRedemption, PromoCode
 from offer.services.offer_service import OfferService
-from order.models import Order, OrderItem, OrderItemExtra
+from order.models import ActivityLog, Order, OrderItem, OrderItemExtra
+from order.services.activity_log_service import ActivityLogService
 from order.services.branch_service import BranchAssignmentService
 from order.services.order_websocket_service import OrderWebSocketService
 from product.models import Product, ProductExtra
@@ -182,6 +183,7 @@ class OrderService:
             is_paid=order_data.get("is_paid", False),
         )
         order._skip_signal_create = True
+        order._skip_activity_log = True
         order.save()
 
         # 6b. Automatically link NPSTransaction if transaction_id is provided
@@ -233,6 +235,43 @@ class OrderService:
             if promo_code_obj:
                 promo_code_obj.current_usage_count += 1
                 promo_code_obj.save(update_fields=["current_usage_count"])
+
+        # Record single consolidated activity log for order creation
+        item_reprs = []
+        for item in processed_items:
+            extra_names = [ex.name for ex in item.get("extras", [])]
+            extras_str = f" (+{', '.join(extra_names)})" if extra_names else ""
+            item_reprs.append(f"{item['quantity']}x {item['product'].name}{extras_str}")
+
+        items_summary = (
+            f" with {len(item_reprs)} item(s) ({', '.join(item_reprs)})"
+            if item_reprs
+            else ""
+        )
+        ActivityLogService.log_activity(
+            action_type=ActivityLog.ActionType.CREATE,
+            entity_type=ActivityLog.EntityType.ORDER,
+            entity_name="Order",
+            record_id=str(order.pk),
+            record_repr=f"Order #{order.order_number}",
+            order=order,
+            description=(
+                f"Order #{order.order_number} created{items_summary} for customer "
+                f"'{order.customer_name or 'Walk-in'}' (Status: {order.status}, "
+                f"Type: {order.order_type}, Total: Rs. {order.total_amount})."
+            ),
+            changes={
+                "order_number": order.order_number,
+                "status": order.status,
+                "order_type": order.order_type,
+                "payment_type": order.payment_type,
+                "total_amount": order.total_amount,
+                "customer_name": order.customer_name,
+                "phone_number": order.phone_number,
+                "items": item_reprs,
+            },
+        )
+        order._skip_activity_log = False
 
         # 9. Trigger notification and WebSocket broadcast after transaction commit
         order_id = order.id
@@ -427,6 +466,7 @@ class OrderService:
             status=Order.OrderStatus.CONFIRMED,
         )
         order._skip_signal_create = True
+        order._skip_activity_log = True
         order.save()
 
         tx_id = order_data.get("transaction_id")
@@ -480,6 +520,43 @@ class OrderService:
             if promo_code_obj:
                 promo_code_obj.current_usage_count += 1
                 promo_code_obj.save(update_fields=["current_usage_count"])
+
+        # Record single consolidated activity log for POS order creation
+        item_reprs = []
+        for item in processed_items:
+            extra_names = [ex.name for ex in item.get("extras", [])]
+            extras_str = f" (+{', '.join(extra_names)})" if extra_names else ""
+            item_reprs.append(f"{item['quantity']}x {item['product'].name}{extras_str}")
+
+        items_summary = (
+            f" with {len(item_reprs)} item(s) ({', '.join(item_reprs)})"
+            if item_reprs
+            else ""
+        )
+        ActivityLogService.log_activity(
+            action_type=ActivityLog.ActionType.CREATE,
+            entity_type=ActivityLog.EntityType.ORDER,
+            entity_name="Order",
+            record_id=str(order.pk),
+            record_repr=f"Order #{order.order_number}",
+            order=order,
+            description=(
+                f"POS Order #{order.order_number} created{items_summary} for customer "
+                f"'{order.customer_name or 'Walk-in'}' (Status: {order.status}, "
+                f"Type: {order.order_type}, Total: Rs. {order.total_amount})."
+            ),
+            changes={
+                "order_number": order.order_number,
+                "status": order.status,
+                "order_type": order.order_type,
+                "payment_type": order.payment_type,
+                "total_amount": order.total_amount,
+                "customer_name": order.customer_name,
+                "phone_number": order.phone_number,
+                "items": item_reprs,
+            },
+        )
+        order._skip_activity_log = False
 
         # Trigger notification and WebSocket broadcast
         order_id = order.id
@@ -594,25 +671,75 @@ class OrderService:
 
     @classmethod
     @transaction.atomic
-    def update_order_items(cls, order, cart_items_data):
+    def update_order_items(cls, order, cart_items_data, save_order=True):
         """
-        Replaces all items on an existing order with the new cart_items_data.
+        Updates items on an existing order with the provided cart_items_data.
 
-        cart_items_data: list of dicts with keys:
-            - product_id  (int)   OR  product  (int, alias accepted from frontend)
-            - quantity    (int)
-            - extras      (list of {extra_id: int}, optional)
-
-        Recalculates subtotal, delivery_fee-adjusted total_amount, and saves the order.
+        Performs a smart differential update:
+        1. Compares incoming items with existing items on the order.
+           If items have NOT changed (same products, quantities, extras), this is a no-op!
+        2. If items changed:
+           - Existing matching items have their quantity/prices updated in-place (no delete+recreate).
+           - New items are created.
+           - Removed items are deleted.
+        3. Recalculates subtotal and total_amount.
+        4. If save_order is True, saves the order and logs the activity.
         """
         # Normalise: accept both "product_id" and "product" as the product key
         normalised = []
         for item in cart_items_data:
+            p_val = item.get("product_id") or item.get("product")
+            if isinstance(p_val, dict):
+                p_id = p_val.get("id")
+            else:
+                p_id = p_val
+
+            try:
+                p_id = int(p_id)
+            except (TypeError, ValueError):
+                continue
+
+            try:
+                qty = int(item.get("quantity", 1))
+            except (TypeError, ValueError):
+                qty = 1
+
+            extras_input = item.get("extras") or item.get("selected_extras") or []
+            normalised_extras = []
+            for ex in extras_input:
+                if isinstance(ex, dict):
+                    ex_id = ex.get("extra_id") or ex.get("extra") or ex.get("id")
+                else:
+                    ex_id = ex
+                try:
+                    if ex_id is not None:
+                        normalised_extras.append(int(ex_id))
+                except (TypeError, ValueError):
+                    continue
+
             normalised.append({
-                "product_id": item.get("product_id") or item.get("product"),
-                "quantity": item["quantity"],
-                "extras": item.get("extras", []),
+                "product_id": p_id,
+                "quantity": qty,
+                "extra_ids": tuple(sorted(normalised_extras)),
             })
+
+        existing_items = list(order.items.prefetch_related("selected_extras").all())
+
+        def _existing_item_signature(it):
+            extras_tuple = tuple(
+                sorted(ex.extra_id for ex in it.selected_extras.all() if ex.extra_id)
+            )
+            return (it.product_id, extras_tuple, it.quantity)
+
+        def _incoming_item_signature(it):
+            return (it["product_id"], it["extra_ids"], it["quantity"])
+
+        existing_sig = sorted([_existing_item_signature(it) for it in existing_items])
+        incoming_sig = sorted([_incoming_item_signature(it) for it in normalised])
+
+        # If existing items and incoming items are completely identical, do nothing!
+        if existing_sig == incoming_sig:
+            return order
 
         product_ids = [item["product_id"] for item in normalised]
         products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
@@ -622,75 +749,128 @@ class OrderService:
         if missing:
             raise ValueError(f"Products not found: {missing}")
 
-        all_extra_ids = [
-            ex["extra_id"] for item in normalised for ex in item.get("extras", [])
-        ]
+        all_extra_ids = [ex_id for item in normalised for ex_id in item["extra_ids"]]
         extras_map = (
             {e.id: e for e in ProductExtra.objects.filter(id__in=all_extra_ids)}
             if all_extra_ids
             else {}
         )
 
-        # Build processed items & calculate subtotal
+        # Index existing items by (product_id, extra_ids)
+        existing_by_key = {}
+        for it in existing_items:
+            extras_tuple = tuple(
+                sorted(ex.extra_id for ex in it.selected_extras.all() if ex.extra_id)
+            )
+            key = (it.product_id, extras_tuple)
+            existing_by_key.setdefault(key, []).append(it)
+
+        # Perform smart in-place update or create
+        items_added = []
+        items_updated = []
+        items_removed = []
         subtotal = 0.0
-        processed_items = []
 
         for item in normalised:
-            p_id = item["product_id"]
+            key = (item["product_id"], item["extra_ids"])
+            product = products_map[item["product_id"]]
             qty = item["quantity"]
-            product = products_map[p_id]
             unit_price = float(product.price)
-            extras_price_per_unit = 0.0
-            extra_objs = []
-
-            for ex_data in item.get("extras", []):
-                extra = extras_map.get(ex_data["extra_id"])
-                if extra:
-                    extras_price_per_unit += float(extra.additional_price)
-                    extra_objs.append(extra)
-
+            extras_price_per_unit = sum(
+                float(extras_map[eid].additional_price)
+                for eid in item["extra_ids"]
+                if eid in extras_map
+            )
             item_subtotal = round((unit_price + extras_price_per_unit) * qty, 2)
+            item_extras_total = round(extras_price_per_unit * qty, 2)
             subtotal += item_subtotal
-            processed_items.append({
-                "product": product,
-                "quantity": qty,
-                "unit_price": unit_price,
-                "extras_price": round(extras_price_per_unit * qty, 2),
-                "subtotal": item_subtotal,
-                "extra_objs": extra_objs,
-            })
+
+            if key in existing_by_key and existing_by_key[key]:
+                matched_item = existing_by_key[key].pop(0)
+                # In-place update only if dirty
+                if (
+                    matched_item.quantity != qty
+                    or matched_item.unit_price != unit_price
+                    or matched_item.subtotal != item_subtotal
+                ):
+                    old_qty = matched_item.quantity
+                    matched_item.quantity = qty
+                    matched_item.unit_price = unit_price
+                    matched_item.extras_price = item_extras_total
+                    matched_item.subtotal = item_subtotal
+                    matched_item.save(
+                        update_fields=[
+                            "quantity",
+                            "unit_price",
+                            "extras_price",
+                            "subtotal",
+                            "updated_at",
+                        ]
+                    )
+                    items_updated.append(
+                        f"{product.name} (qty: {old_qty} \u2192 {qty})"
+                    )
+            else:
+                # Brand new item added to the order
+                order_item = OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=qty,
+                    unit_price=unit_price,
+                    extras_price=item_extras_total,
+                    subtotal=item_subtotal,
+                )
+                extra_objs = [
+                    extras_map[eid] for eid in item["extra_ids"] if eid in extras_map
+                ]
+                if extra_objs:
+                    OrderItemExtra.objects.bulk_create([
+                        OrderItemExtra(
+                            order_item=order_item,
+                            extra=ex,
+                            extra_name=ex.name,
+                            additional_price=ex.additional_price,
+                        )
+                        for ex in extra_objs
+                    ])
+                extra_names = [ex.name for ex in extra_objs]
+                extras_str = f" (+{', '.join(extra_names)})" if extra_names else ""
+                items_added.append(f"{qty}x {product.name}{extras_str}")
+
+        # Delete any items that were removed in the new cart
+        for remaining_list in existing_by_key.values():
+            for remaining_item in remaining_list:
+                prod_name = getattr(
+                    remaining_item.product,
+                    "name",
+                    f"Product #{remaining_item.product_id}",
+                )
+                extra_names = [
+                    ex.extra_name for ex in remaining_item.selected_extras.all()
+                ]
+                extras_str = f" (+{', '.join(extra_names)})" if extra_names else ""
+                items_removed.append(
+                    f"{remaining_item.quantity}x {prod_name}{extras_str}"
+                )
+                remaining_item.delete()
 
         subtotal = round(subtotal, 2)
         delivery_fee = float(order.delivery_fee or 0.0)
         discount_amount = float(order.discount_amount or 0.0)
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
-        # Replace all existing items
-        order.items.all().delete()
-
-        for item in processed_items:
-            order_item = OrderItem.objects.create(
-                order=order,
-                product=item["product"],
-                quantity=item["quantity"],
-                unit_price=item["unit_price"],
-                extras_price=item["extras_price"],
-                subtotal=item["subtotal"],
-            )
-            if item["extra_objs"]:
-                OrderItemExtra.objects.bulk_create([
-                    OrderItemExtra(
-                        order_item=order_item,
-                        extra=ex,
-                        extra_name=ex.name,
-                        additional_price=ex.additional_price,
-                    )
-                    for ex in item["extra_objs"]
-                ])
-
         # Update order financials
         order.subtotal = subtotal
         order.total_amount = total_amount
-        order.save(update_fields=["subtotal", "total_amount", "updated_at"])
+
+        # Attach item changes for single unified activity logging
+        order._order_item_changes = {
+            "items_added": items_added,
+            "items_updated": items_updated,
+            "items_removed": items_removed,
+        }
+
+        if save_order:
+            order.save(update_fields=["subtotal", "total_amount", "updated_at"])
 
         return order

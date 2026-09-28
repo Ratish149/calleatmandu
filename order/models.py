@@ -290,4 +290,100 @@ class OrderItemExtra(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.order_item} \u203a {self.extra_name} (+{self.additional_price})"
+        return f"{self.order_item} › {self.extra_name} (+{self.additional_price})"
+
+
+class ActivityLog(BaseModel):
+    """
+    Audit and activity log recording changes to order details, orders, products,
+    categories, users, settings, and other critical business records.
+    """
+
+    class ActionType(models.TextChoices):
+        CREATE = "CREATE", "Create"
+        UPDATE = "UPDATE", "Update"
+        DELETE = "DELETE", "Delete"
+
+    class EntityType(models.TextChoices):
+        ORDER = "ORDER", "Order"
+        ORDER_DETAIL = "ORDER_DETAIL", "Order Detail"
+        PRODUCT = "PRODUCT", "Product"
+        CATEGORY = "CATEGORY", "Category"
+        USER = "USER", "User"
+        SETTING = "SETTING", "Setting"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+        help_text="User who triggered this action (if authenticated).",
+    )
+    action_type = models.CharField(
+        max_length=20,
+        choices=ActionType.choices,
+        db_index=True,
+        help_text="Type of action performed: CREATE, UPDATE, DELETE.",
+    )
+    entity_type = models.CharField(
+        max_length=30,
+        choices=EntityType.choices,
+        db_index=True,
+        help_text="Category of the entity affected.",
+    )
+    entity_name = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="Target model or entity name (e.g. Order, OrderItem, Product, Category, User, DeliveryPricing).",
+    )
+    record_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Primary key/identifier of the affected record.",
+    )
+    record_repr = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Human-readable title or label of the affected record.",
+    )
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+        help_text="Associated Order if this activity relates to an order or its items.",
+    )
+    description = models.TextField(
+        help_text="Human-readable summary of the change or event.",
+    )
+    changes = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Dictionary detailing changed fields with their previous and new values.",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Client IP address where the action originated.",
+    )
+
+    class Meta:
+        verbose_name = "Activity Log"
+        verbose_name_plural = "Activity Logs"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["entity_type", "created_at"]),
+            models.Index(fields=["action_type", "created_at"]),
+            models.Index(fields=["order", "created_at"]),
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["entity_name", "record_id"]),
+        ]
+
+    def __str__(self):
+        user_str = self.user.username if self.user else "System"
+        return f"[{self.action_type}] {self.entity_name} ({self.record_repr or self.record_id}) by {user_str}"

@@ -14,10 +14,15 @@ from rest_framework.response import Response
 from account.models import User
 from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
 from common.utils import CustomPagination
-from order.filters import OrderFilter
+from order.filters import ActivityLogFilter, OrderFilter
 from order.models import Order
-from order.selectors import get_customer_orders_queryset
+from order.selectors import (
+    get_activity_logs_queryset,
+    get_customer_orders_queryset,
+    get_order_activity_logs_queryset,
+)
 from order.serializers import (
+    ActivityLogSerializer,
     AssignRiderSerializer,
     OrderCreateSerializer,
     OrderResponseSerializer,
@@ -324,24 +329,19 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
                 setattr(order, field, value)
                 update_fields.append(field)
 
-        # ── Handle items replacement ──────────────────────────────────────────
+        # ── Handle items update ───────────────────────────────────────────────
         items_data = raw.get("items")
         if items_data is not None:
             try:
-                # Recalculate totals respecting any updated delivery_fee
                 if "delivery_fee" in update_fields:
-                    order.delivery_fee = float(raw.get("delivery_fee", order.delivery_fee))
-                OrderService.update_order_items(order, items_data)
-                # update_order_items already called order.save(); skip re-saving
-                # only non-items fields need saving below
-                update_fields = [f for f in update_fields if f != "delivery_fee"]
+                    order.delivery_fee = float(
+                        raw.get("delivery_fee", order.delivery_fee)
+                    )
+                OrderService.update_order_items(order, items_data, save_order=False)
             except ValueError as exc:
                 raise serializers.ValidationError({"items": str(exc)})
 
-        if update_fields:
-            order.save(update_fields=update_fields + ["updated_at"])
-
-        # Save anything the serializer itself validated (e.g. status change)
+        # Single atomic save for all validated serializer fields and direct model fields
         serializer.save()
 
 
@@ -499,3 +499,55 @@ class CustomerOrderHistoryAPIView(ListAPIView):
             queryset = queryset.filter(assigned_to_rider=user)
 
         return queryset
+
+
+class ActivityLogListCreateAPIView(ListCreateAPIView):
+    """
+    List and create activity log records.
+    Supports filtering by entity_type, action_type, entity_name, user, order, date range, and search.
+    """
+
+    # permission_classes = [IsAuthenticated, IsStaffOrOperationalRole]
+    serializer_class = ActivityLogSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_class = ActivityLogFilter
+    pagination_class = CustomPagination
+    search_fields = [
+        "description",
+        "record_repr",
+        "record_id",
+        "entity_name",
+        "order__order_number",
+        "user__username",
+    ]
+
+    def get_queryset(self):
+        return get_activity_logs_queryset()
+
+
+class ActivityLogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update, partial update, or delete a specific activity log entry.
+    """
+
+    permission_classes = [IsAuthenticated, IsStaffOrOperationalRole]
+    serializer_class = ActivityLogSerializer
+
+    def get_queryset(self):
+        return get_activity_logs_queryset()
+
+
+class OrderActivityLogListAPIView(ListAPIView):
+    """
+    List all activity logs associated with a specific order number.
+    """
+
+    permission_classes = [IsAuthenticated, IsStaffOrOperationalRole]
+    serializer_class = ActivityLogSerializer
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        order_number = self.kwargs.get("order_number")
+        if not order_number:
+            raise NotFound("Order number is required.")
+        return get_order_activity_logs_queryset(order_number)
