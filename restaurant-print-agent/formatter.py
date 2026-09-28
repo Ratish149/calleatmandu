@@ -102,6 +102,10 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # ── Header: "** KITCHEN TICKET **" ───────────────────────────
     buf.extend(ALIGN_CENTER)
     buf.extend(_line_sep(width, "-"))
+
+    # App name — normal bold (same size as branch name)
+    buf.extend(BOLD_ON + b"CallEatMandu\n" + BOLD_OFF)
+
     buf.extend(BOLD_ON + TXT_TITLE + b"** KITCHEN TICKET **\n" + TXT_NORMAL + BOLD_OFF)
 
     # Branch name below header (bold, centered)
@@ -132,7 +136,9 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
 
     # ── ITEMS section ─────────────────────────────────────────────
     items = order.get("items", [])
-    buf.extend(BOLD_ON + f"ITEMS ({len(items)})\n".encode("latin1", "replace") + BOLD_OFF)
+    buf.extend(
+        BOLD_ON + f"ITEMS ({len(items)})\n".encode("latin1", "replace") + BOLD_OFF
+    )
     buf.extend(_line_sep(width, "-"))
 
     for item in items:
@@ -154,7 +160,11 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
             extra_price = extra.get("additional_price", 0)
             if extra_name:
                 if extra_price and float(str(extra_price)) > 0:
-                    buf.extend(f"  + {extra_name} (+{extra_price})\n".encode("latin1", "replace"))
+                    buf.extend(
+                        f"  + {extra_name} (+{extra_price})\n".encode(
+                            "latin1", "replace"
+                        )
+                    )
                 else:
                     buf.extend(f"  + {extra_name}\n".encode("latin1", "replace"))
 
