@@ -100,7 +100,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://illustrated-collaboration-bare-exhibitions.trycloudflare.com",
+    "https://meters-tobago-discounted-relocation.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -108,7 +108,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://illustrated-collaboration-bare-exhibitions.trycloudflare.com",
+    "https://meters-tobago-discounted-relocation.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 

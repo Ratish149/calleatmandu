@@ -77,10 +77,18 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
         or ""
     ).strip()
 
-    # Customer info
+    # Branch and customer info
+    branch_name = str(
+        order.get("branch_name")
+        or (order.get("branch") or {}).get("name", "")
+        or "RESTAURANT"
+    ).strip()
     customer = order.get("customer", {})
     cust_name = str(
         (customer.get("name") if customer else None) or order.get("customer_name", "")
+    ).strip()
+    cust_phone = str(
+        (customer.get("phone") if customer else None) or order.get("phone_number", "")
     ).strip()
 
     # Time parts
@@ -96,9 +104,8 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     buf.extend(_line_sep(width, "-"))
     buf.extend(BOLD_ON + TXT_TITLE + b"** KITCHEN TICKET **\n" + TXT_NORMAL + BOLD_OFF)
 
-    # Customer name (normal bold, centered)
-    if cust_name:
-        buf.extend(BOLD_ON + cust_name.encode("latin1", "replace") + b"\n" + BOLD_OFF)
+    # Branch name below header (bold, centered)
+    buf.extend(BOLD_ON + branch_name.encode("latin1", "replace") + b"\n" + BOLD_OFF)
 
     buf.extend(_line_sep(width, "-"))
 
@@ -117,6 +124,10 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # ── CUSTOMER section ─────────────────────────────────────────
     buf.extend(ALIGN_LEFT)
     buf.extend(BOLD_ON + b"CUSTOMER\n" + BOLD_OFF)
+    if cust_name:
+        buf.extend(f"  Name : {cust_name}\n".encode("latin1", "replace"))
+    if cust_phone:
+        buf.extend(f"  Phone: {cust_phone}\n".encode("latin1", "replace"))
     buf.extend(_line_sep(width, "-"))
 
     # ── ITEMS section ─────────────────────────────────────────────

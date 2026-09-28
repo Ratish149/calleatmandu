@@ -193,6 +193,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "delivery_location",
             "latitude",
             "longitude",
+            "special_note",
             "subtotal",
             "delivery_fee",
             "total_amount",
@@ -211,6 +212,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "assigned_to_rider_phone",
             "items",
             "status_history",
+            "created_at",
         ]
 
     def get_status_history(self, obj):
