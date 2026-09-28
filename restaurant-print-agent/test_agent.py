@@ -80,7 +80,7 @@ class TestPrintAgent(unittest.TestCase):
         self.assertIn(GS + b"VA\x03", kot_bytes)  # Cut command
 
         text = kot_bytes.decode("latin1", errors="ignore")
-        self.assertIn("KITCHEN ORDER", text)
+        self.assertIn("KITCHEN TICKET", text)
         self.assertIn("ORD-1025", text)
         self.assertIn("Chicken Momo", text)
         self.assertIn("x2", text)
@@ -88,7 +88,7 @@ class TestPrintAgent(unittest.TestCase):
         self.assertIn("x1", text)
         self.assertIn("Spicy, extra chutney", text)
         # Verify customer payment/delivery fees are omitted from KOT
-        self.assertNotIn("550.00", text)
+        self.assertNotIn("550", text)
 
     def test_bill_formatting(self):
         bill_bytes = format_bill(SAMPLE_ORDER, width_mm=80)
@@ -98,13 +98,14 @@ class TestPrintAgent(unittest.TestCase):
         self.assertIn("ABC RESTAURANT", text)
         self.assertIn("ORD-1025", text)
         self.assertIn("Chicken Momo", text)
-        self.assertIn("300.00", text)
+        self.assertIn("300", text)
         self.assertIn("Chowmein", text)
-        self.assertIn("200.00", text)
+        self.assertIn("200", text)
         self.assertIn("Subtotal", text)
         self.assertIn("TOTAL", text)
-        self.assertIn("550.00", text)
+        self.assertIn("550", text)
         self.assertIn("THANK YOU", text)
+        self.assertIn("calleatmandu.com", text)
 
     def test_format_test(self):
         test_bytes = format_test(branch_id=15, printer_name="XP-80C", width_mm=80)
