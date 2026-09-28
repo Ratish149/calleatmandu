@@ -29,16 +29,23 @@ class BranchAssignmentService:
         """
         Finds the nearest active branch to the given customer coordinates.
         Returns the Branch instance or None if no active branches exist.
+        If latitude/longitude are None (customer did not provide location),
+        returns the first active branch as a fallback.
         """
-        active_branches = Branch.objects.all().only(
-            "id", "name", "address", "latitude", "longitude"
-        )
+        active_branches = Branch.objects.filter(
+            latitude__isnull=False,
+            longitude__isnull=False,
+        ).only("id", "name", "address", "latitude", "longitude")
 
         if not active_branches.exists():
             return None
 
         # If only 1 branch exists, return it directly
         if active_branches.count() == 1:
+            return active_branches.first()
+
+        # If customer coordinates are missing, fall back to the first branch
+        if latitude is None or longitude is None:
             return active_branches.first()
 
         # Find branch with minimum Haversine distance

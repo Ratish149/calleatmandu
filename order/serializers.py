@@ -89,12 +89,18 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderCreateSerializer(serializers.Serializer):
-    customer_name = serializers.CharField(max_length=150)
-    phone_number = serializers.CharField(max_length=20)
-    delivery_location = serializers.CharField(max_length=255)
-    latitude = serializers.FloatField()
-    longitude = serializers.FloatField()
-    special_note = serializers.CharField(required=False, allow_blank=True)
+    customer_name = serializers.CharField(
+        max_length=150, required=False, allow_null=True
+    )
+    phone_number = serializers.CharField(max_length=20, required=False, allow_null=True)
+    delivery_location = serializers.CharField(
+        max_length=255, required=False, allow_null=True
+    )
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+    special_note = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
     promo_code = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
@@ -112,12 +118,8 @@ class OrderCreateSerializer(serializers.Serializer):
     transaction_id = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-    delivery_fee = serializers.FloatField(
-        required=False, default=0.0, min_value=0.0
-    )
-    discount_amount = serializers.FloatField(
-        required=False, default=0.0, min_value=0.0
-    )
+    delivery_fee = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    discount_amount = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True)
 
@@ -159,12 +161,8 @@ class POSOrderCreateSerializer(serializers.Serializer):
     transaction_id = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-    delivery_fee = serializers.FloatField(
-        required=False, default=0.0, min_value=0.0
-    )
-    discount_amount = serializers.FloatField(
-        required=False, default=0.0, min_value=0.0
-    )
+    delivery_fee = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    discount_amount = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True)
 

@@ -58,11 +58,11 @@ class Order(BaseModel):
     )
 
     # Customer Details
-    customer_name = models.CharField(max_length=150)
-    phone_number = models.CharField(max_length=20)
-    delivery_location = models.CharField(max_length=255)
-    latitude = models.FloatField(db_index=True)
-    longitude = models.FloatField(db_index=True)
+    customer_name = models.CharField(max_length=150, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, null=True, blank=True)
+    delivery_location = models.CharField(max_length=255, null=True, blank=True)
+    latitude = models.FloatField(db_index=True, null=True, blank=True)
+    longitude = models.FloatField(db_index=True, null=True, blank=True)
     special_note = models.TextField(blank=True, null=True)
 
     # Financial & Offer Info

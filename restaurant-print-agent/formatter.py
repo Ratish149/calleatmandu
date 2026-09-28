@@ -62,11 +62,12 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     KOT focuses strictly on kitchen requirements: Order #, Order Type, Item Qty, and Notes.
     Omits payment / pricing details.
     """
+    import datetime
+
     width = _get_columns(width_mm)
     buf = bytearray()
 
     order_num = str(order.get("order_number", "N/A"))
-    resto_name = str(order.get("restaurant_name", "RESTAURANT"))
     order_type = str(order.get("order_type", "DELIVERY")).upper()
     created_at = str(order.get("created_at", ""))
     notes = str(
@@ -76,54 +77,83 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
         or ""
     ).strip()
 
-    # Initialize
+    # Customer info
+    customer = order.get("customer", {})
+    cust_name = str(
+        (customer.get("name") if customer else None) or order.get("customer_name", "")
+    ).strip()
+
+    # Time parts
+    time_str = ""
+    if created_at:
+        time_str = created_at.replace("T", " ")[11:16]  # HH:MM
+
+    # ── Initialize ────────────────────────────────────────────────
     buf.extend(INIT)
 
-    # Header
+    # ── Header: "** KITCHEN TICKET **" ───────────────────────────
     buf.extend(ALIGN_CENTER)
-    buf.extend(_line_sep(width, "="))
-    buf.extend(BOLD_ON + TXT_TITLE + b"KITCHEN ORDER\n" + TXT_NORMAL + BOLD_OFF)
-    buf.extend(_line_sep(width, "="))
-    buf.extend(b"\n")
+    buf.extend(_line_sep(width, "-"))
+    buf.extend(BOLD_ON + TXT_TITLE + b"** KITCHEN TICKET **\n" + TXT_NORMAL + BOLD_OFF)
 
-    buf.extend(BOLD_ON + resto_name.encode("latin1", "replace") + b"\n\n" + BOLD_OFF)
-
-    # Order details
-    buf.extend(ALIGN_LEFT)
-    buf.extend(f"Order: {order_num}\n".encode("latin1", "replace"))
-    buf.extend(f"Type:  {order_type}\n".encode("latin1", "replace"))
-    if created_at:
-        time_part = created_at.replace("T", " ")[:19]
-        buf.extend(f"Time:  {time_part}\n".encode("latin1", "replace"))
+    # Customer name (normal bold, centered)
+    if cust_name:
+        buf.extend(BOLD_ON + cust_name.encode("latin1", "replace") + b"\n" + BOLD_OFF)
 
     buf.extend(_line_sep(width, "-"))
-    buf.extend(b"\n")
 
-    # Item List
+    # ── Order meta row: "Order: #xxx | Time: HH:MM | Type: DINE" ─
+    buf.extend(ALIGN_LEFT)
+    buf.extend(f"Order: #{order_num}\n".encode("latin1", "replace"))
+
+    if time_str:
+        row = _two_cols(f"Time: {time_str}", f"Type: {order_type}", width)
+        buf.extend(row.encode("latin1", "replace"))
+    else:
+        buf.extend(f"Type: {order_type}\n".encode("latin1", "replace"))
+
+    buf.extend(_line_sep(width, "-"))
+
+    # ── CUSTOMER section ─────────────────────────────────────────
+    buf.extend(ALIGN_LEFT)
+    buf.extend(BOLD_ON + b"CUSTOMER\n" + BOLD_OFF)
+    buf.extend(_line_sep(width, "-"))
+
+    # ── ITEMS section ─────────────────────────────────────────────
     items = order.get("items", [])
-    buf.extend(BOLD_ON + TXT_DOUBLE_HEIGHT)
+    buf.extend(BOLD_ON + f"ITEMS ({len(items)})\n".encode("latin1", "replace") + BOLD_OFF)
+    buf.extend(_line_sep(width, "-"))
+
     for item in items:
         name = str(item.get("product_name") or item.get("name", "Unknown Item"))
         qty = item.get("quantity", 1)
         item_note = str(item.get("notes", "") or item.get("special_note", "")).strip()
 
-        row_text = _two_cols(name, f"x{qty}", width)
+        # Product name LEFT, quantity RIGHT in LARGE font (TXT_TITLE = 2x height + 2x width)
+        # Use width//2 because TXT_TITLE doubles each character's physical width
+        buf.extend(BOLD_ON + TXT_TITLE)
+        row_text = _two_cols(name, f"x{qty}", width // 2)
         buf.extend(row_text.encode("latin1", "replace"))
+        buf.extend(TXT_NORMAL + BOLD_OFF)
 
         if item_note:
             buf.extend(f"  * {item_note}\n".encode("latin1", "replace"))
 
-    buf.extend(TXT_NORMAL + BOLD_OFF)
-    buf.extend(b"\n")
     buf.extend(_line_sep(width, "-"))
 
-    # Order Special Instructions / Notes
+    # ── Special Instructions / Notes ──────────────────────────────
     if notes:
         buf.extend(b"\n")
         buf.extend(BOLD_ON + b"Special Instructions:\n" + BOLD_OFF)
-        buf.extend(notes.encode("latin1", "replace") + b"\n\n")
+        buf.extend(notes.encode("latin1", "replace") + b"\n")
+        buf.extend(_line_sep(width, "-"))
 
-    buf.extend(_line_sep(width, "="))
+    # ── Footer: "Printed at: HH:MM:SS" ───────────────────────────
+    buf.extend(ALIGN_CENTER)
+    printed_at = datetime.datetime.now().strftime("%H:%M:%S")
+    buf.extend(f"Printed at: {printed_at}\n".encode("latin1", "replace"))
+    buf.extend(_line_sep(width, "-"))
+
     buf.extend(FEED_3)
     buf.extend(CUT_PAPER)
 

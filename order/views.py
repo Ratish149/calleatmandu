@@ -292,6 +292,56 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             serializer.instance._status_change_comment = comment
         if self.request.user and self.request.user.is_authenticated:
             serializer.instance._status_changed_by = self.request.user
+
+        # ── Handle direct customer-detail fields sent in the PATCH body ──────
+        order = serializer.instance
+        raw = self.request.data
+
+        updatable_fields = [
+            "customer_name",
+            "phone_number",
+            "delivery_location",
+            "special_note",
+            "payment_type",
+            "is_paid",
+            "delivery_fee",
+        ]
+        update_fields = []
+        for field in updatable_fields:
+            if field in raw:
+                value = raw[field]
+                if field == "delivery_fee":
+                    try:
+                        value = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                elif field == "is_paid":
+                    # Accept boolean strings from JSON body
+                    if isinstance(value, str):
+                        value = value.lower() in ("true", "1", "yes")
+                    else:
+                        value = bool(value)
+                setattr(order, field, value)
+                update_fields.append(field)
+
+        # ── Handle items replacement ──────────────────────────────────────────
+        items_data = raw.get("items")
+        if items_data is not None:
+            try:
+                # Recalculate totals respecting any updated delivery_fee
+                if "delivery_fee" in update_fields:
+                    order.delivery_fee = float(raw.get("delivery_fee", order.delivery_fee))
+                OrderService.update_order_items(order, items_data)
+                # update_order_items already called order.save(); skip re-saving
+                # only non-items fields need saving below
+                update_fields = [f for f in update_fields if f != "delivery_fee"]
+            except ValueError as exc:
+                raise serializers.ValidationError({"items": str(exc)})
+
+        if update_fields:
+            order.save(update_fields=update_fields + ["updated_at"])
+
+        # Save anything the serializer itself validated (e.g. status change)
         serializer.save()
 
 

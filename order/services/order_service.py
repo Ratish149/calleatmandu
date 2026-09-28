@@ -18,8 +18,8 @@ class OrderService:
         evaluates offers/promo codes, creates order items (with extras), and records
         offer redemptions.
         """
-        lat = order_data["latitude"]
-        lon = order_data["longitude"]
+        lat = order_data.get("latitude")
+        lon = order_data.get("longitude")
         promo_code_str = order_data.get("promo_code")
 
         # 1. Automatically find nearest active branch
@@ -164,9 +164,9 @@ class OrderService:
         order = Order(
             user=user if user and user.is_authenticated else None,
             branch=nearest_branch,
-            customer_name=order_data["customer_name"],
-            phone_number=order_data["phone_number"],
-            delivery_location=order_data["delivery_location"],
+            customer_name=order_data.get("customer_name"),
+            phone_number=order_data.get("phone_number"),
+            delivery_location=order_data.get("delivery_location"),
             latitude=lat,
             longitude=lon,
             special_note=order_data.get("special_note", ""),
@@ -591,3 +591,106 @@ class OrderService:
     def broadcast_order_ready_for_pickup(cls, order_or_id):
         """Dispatches order.ready_for_pickup WebSocket event."""
         return OrderWebSocketService.broadcast_order_ready_for_pickup(order_or_id)
+
+    @classmethod
+    @transaction.atomic
+    def update_order_items(cls, order, cart_items_data):
+        """
+        Replaces all items on an existing order with the new cart_items_data.
+
+        cart_items_data: list of dicts with keys:
+            - product_id  (int)   OR  product  (int, alias accepted from frontend)
+            - quantity    (int)
+            - extras      (list of {extra_id: int}, optional)
+
+        Recalculates subtotal, delivery_fee-adjusted total_amount, and saves the order.
+        """
+        # Normalise: accept both "product_id" and "product" as the product key
+        normalised = []
+        for item in cart_items_data:
+            normalised.append({
+                "product_id": item.get("product_id") or item.get("product"),
+                "quantity": item["quantity"],
+                "extras": item.get("extras", []),
+            })
+
+        product_ids = [item["product_id"] for item in normalised]
+        products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+
+        # Validate all products exist
+        missing = set(product_ids) - set(products_map.keys())
+        if missing:
+            raise ValueError(f"Products not found: {missing}")
+
+        all_extra_ids = [
+            ex["extra_id"] for item in normalised for ex in item.get("extras", [])
+        ]
+        extras_map = (
+            {e.id: e for e in ProductExtra.objects.filter(id__in=all_extra_ids)}
+            if all_extra_ids
+            else {}
+        )
+
+        # Build processed items & calculate subtotal
+        subtotal = 0.0
+        processed_items = []
+
+        for item in normalised:
+            p_id = item["product_id"]
+            qty = item["quantity"]
+            product = products_map[p_id]
+            unit_price = float(product.price)
+            extras_price_per_unit = 0.0
+            extra_objs = []
+
+            for ex_data in item.get("extras", []):
+                extra = extras_map.get(ex_data["extra_id"])
+                if extra:
+                    extras_price_per_unit += float(extra.additional_price)
+                    extra_objs.append(extra)
+
+            item_subtotal = round((unit_price + extras_price_per_unit) * qty, 2)
+            subtotal += item_subtotal
+            processed_items.append({
+                "product": product,
+                "quantity": qty,
+                "unit_price": unit_price,
+                "extras_price": round(extras_price_per_unit * qty, 2),
+                "subtotal": item_subtotal,
+                "extra_objs": extra_objs,
+            })
+
+        subtotal = round(subtotal, 2)
+        delivery_fee = float(order.delivery_fee or 0.0)
+        discount_amount = float(order.discount_amount or 0.0)
+        total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
+
+        # Replace all existing items
+        order.items.all().delete()
+
+        for item in processed_items:
+            order_item = OrderItem.objects.create(
+                order=order,
+                product=item["product"],
+                quantity=item["quantity"],
+                unit_price=item["unit_price"],
+                extras_price=item["extras_price"],
+                subtotal=item["subtotal"],
+            )
+            if item["extra_objs"]:
+                OrderItemExtra.objects.bulk_create([
+                    OrderItemExtra(
+                        order_item=order_item,
+                        extra=ex,
+                        extra_name=ex.name,
+                        additional_price=ex.additional_price,
+                    )
+                    for ex in item["extra_objs"]
+                ])
+
+        # Update order financials
+        order.subtotal = subtotal
+        order.total_amount = total_amount
+        order.save(update_fields=["subtotal", "total_amount", "updated_at"])
+
+        return order
