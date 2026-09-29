@@ -73,6 +73,7 @@ INSTALLED_APPS = [
 ]
 
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
+APP_URL = os.getenv("APP_URL", "")
 
 """ DATABASES = {
     "default": {
@@ -100,7 +101,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://teams-fat-travis-roof.trycloudflare.com",
+    "https://karen-something-race-gifts.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -108,7 +109,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://teams-fat-travis-roof.trycloudflare.com",
+    "https://karen-something-race-gifts.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 
