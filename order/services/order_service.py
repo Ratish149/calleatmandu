@@ -705,6 +705,29 @@ class OrderService:
         return OrderWebSocketService.broadcast_order_ready_for_pickup(order_or_id)
 
     @classmethod
+    def recalculate_order_totals(cls, order, subtotal=None, save_order=False):
+        """
+        Recalculates subtotal from order.items and updates total_amount based on:
+        total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
+        """
+        if subtotal is None:
+            items = order.items.all()
+            subtotal = sum(float(item.subtotal or 0.0) for item in items)
+
+        subtotal = round(float(subtotal or 0.0), 2)
+        delivery_fee = float(order.delivery_fee or 0.0)
+        discount_amount = float(order.discount_amount or 0.0)
+        total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
+
+        order.subtotal = subtotal
+        order.total_amount = total_amount
+
+        if save_order:
+            order.save(update_fields=["subtotal", "total_amount", "updated_at"])
+
+        return order
+
+    @classmethod
     @transaction.atomic
     def update_order_items(cls, order, cart_items_data, save_order=True):
         """
@@ -712,7 +735,7 @@ class OrderService:
 
         Performs a smart differential update:
         1. Compares incoming items with existing items on the order.
-           If items have NOT changed (same products, quantities, extras), this is a no-op!
+           If items have NOT changed (same products, quantities, extras), recalculates totals and returns.
         2. If items changed:
            - Existing matching items have their quantity/prices updated in-place (no delete+recreate).
            - New items are created.
@@ -720,7 +743,9 @@ class OrderService:
         3. Recalculates subtotal and total_amount.
         4. If save_order is True, saves the order and logs the activity.
         """
-        # Normalise: accept both "product_id" and "product" as the product key
+        existing_items = list(order.items.prefetch_related("selected_extras").all())
+
+        # Normalise: accept both "product_id" and "product" as the product key, and resolve "id" if provided
         normalised = []
         for item in cart_items_data:
             p_val = item.get("product_id") or item.get("product")
@@ -728,6 +753,14 @@ class OrderService:
                 p_id = p_val.get("id")
             else:
                 p_id = p_val
+
+            if p_id is None and item.get("id"):
+                existing_match = next(
+                    (it for it in existing_items if it.id == item["id"]),
+                    None,
+                )
+                if existing_match:
+                    p_id = existing_match.product_id
 
             try:
                 p_id = int(p_id)
@@ -738,6 +771,9 @@ class OrderService:
                 qty = int(item.get("quantity", 1))
             except (TypeError, ValueError):
                 qty = 1
+
+            if qty <= 0:
+                continue
 
             extras_input = item.get("extras") or item.get("selected_extras") or []
             normalised_extras = []
@@ -758,8 +794,6 @@ class OrderService:
                 "extra_ids": tuple(sorted(normalised_extras)),
             })
 
-        existing_items = list(order.items.prefetch_related("selected_extras").all())
-
         def _existing_item_signature(it):
             extras_tuple = tuple(
                 sorted(ex.extra_id for ex in it.selected_extras.all() if ex.extra_id)
@@ -772,9 +806,9 @@ class OrderService:
         existing_sig = sorted([_existing_item_signature(it) for it in existing_items])
         incoming_sig = sorted([_incoming_item_signature(it) for it in normalised])
 
-        # If existing items and incoming items are completely identical, do nothing!
+        # If existing items and incoming items are completely identical, recalculate totals and return
         if existing_sig == incoming_sig:
-            return order
+            return cls.recalculate_order_totals(order, save_order=save_order)
 
         product_ids = [item["product_id"] for item in normalised]
         products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
@@ -890,13 +924,7 @@ class OrderService:
                 remaining_item.delete()
 
         subtotal = round(subtotal, 2)
-        delivery_fee = float(order.delivery_fee or 0.0)
-        discount_amount = float(order.discount_amount or 0.0)
-        total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
-
-        # Update order financials
-        order.subtotal = subtotal
-        order.total_amount = total_amount
+        cls.recalculate_order_totals(order, subtotal=subtotal, save_order=False)
 
         # Attach item changes for single unified activity logging
         order._order_item_changes = {

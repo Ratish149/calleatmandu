@@ -309,40 +309,79 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             "special_note",
             "payment_type",
             "is_paid",
-            "delivery_fee",
         ]
-        update_fields = []
         for field in updatable_fields:
             if field in raw:
                 value = raw[field]
-                if field == "delivery_fee":
-                    try:
-                        value = float(value)
-                    except (TypeError, ValueError):
-                        continue
-                elif field == "is_paid":
+                if field == "is_paid":
                     # Accept boolean strings from JSON body
                     if isinstance(value, str):
                         value = value.lower() in ("true", "1", "yes")
                     else:
                         value = bool(value)
                 setattr(order, field, value)
-                update_fields.append(field)
+
+        # ── Handle delivery_fee / delivery_amount update ─────────────────────
+        delivery_fee_val = None
+        if "delivery_fee" in raw:
+            delivery_fee_val = raw.get("delivery_fee")
+        elif "delivery_amount" in raw:
+            delivery_fee_val = raw.get("delivery_amount")
+        elif "delivery_fee" in serializer.validated_data:
+            delivery_fee_val = serializer.validated_data.get("delivery_fee")
+
+        delivery_fee_updated = False
+        if delivery_fee_val is not None:
+            try:
+                order.delivery_fee = max(0.0, round(float(delivery_fee_val), 2))
+                delivery_fee_updated = True
+            except (TypeError, ValueError):
+                pass
+
+        # ── Handle discount_amount update ────────────────────────────────────
+        discount_amount_val = raw.get("discount_amount")
+        if discount_amount_val is not None:
+            try:
+                order.discount_amount = max(0.0, round(float(discount_amount_val), 2))
+                delivery_fee_updated = True
+            except (TypeError, ValueError):
+                pass
 
         # ── Handle items update ───────────────────────────────────────────────
         items_data = raw.get("items")
         if items_data is not None:
             try:
-                if "delivery_fee" in update_fields:
-                    order.delivery_fee = float(
-                        raw.get("delivery_fee", order.delivery_fee)
-                    )
                 OrderService.update_order_items(order, items_data, save_order=False)
             except ValueError as exc:
                 raise serializers.ValidationError({"items": str(exc)})
+        elif delivery_fee_updated:
+            # If items did not change but delivery fee or discount changed, recalculate total
+            OrderService.recalculate_order_totals(order, save_order=False)
 
         # Single atomic save for all validated serializer fields and direct model fields
-        serializer.save()
+        serializer.save(
+            subtotal=order.subtotal,
+            total_amount=order.total_amount,
+            delivery_fee=order.delivery_fee,
+            discount_amount=order.discount_amount,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, "_prefetched_objects_cache", None):
+            instance._prefetched_objects_cache = {}
+
+        # Re-fetch order with optimized relations so the response is fully fresh and optimal
+        refreshed_order = (
+            self.get_queryset().filter(pk=serializer.instance.pk).first()
+        ) or serializer.instance
+
+        return Response(self.get_serializer(refreshed_order).data)
 
 
 class RecentOrdersAPIView(GenericAPIView):

@@ -217,6 +217,11 @@ class OrderResponseSerializer(serializers.ModelSerializer):
     assigned_to_rider_phone = serializers.SerializerMethodField()
     nps_payment_status = serializers.SerializerMethodField()
     status_history = serializers.SerializerMethodField()
+    delivery_amount = serializers.FloatField(
+        write_only=True,
+        required=False,
+        help_text="Alias for delivery_fee when updating an order.",
+    )
 
     class Meta:
         model = Order
@@ -233,6 +238,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "special_note",
             "subtotal",
             "delivery_fee",
+            "delivery_amount",
             "total_amount",
             "discount_amount",
             "payment_type",
@@ -251,6 +257,21 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "status_history",
             "created_at",
         ]
+        read_only_fields = [
+            "order_number",
+            "barcode_number",
+            "subtotal",
+            "total_amount",
+            "created_at",
+        ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "delivery_amount" in attrs:
+            if "delivery_fee" not in attrs:
+                attrs["delivery_fee"] = attrs["delivery_amount"]
+            attrs.pop("delivery_amount", None)
+        return attrs
 
     def get_status_history(self, obj):
         histories = sorted(obj.status_history.all(), key=lambda h: (h.created_at, h.id))

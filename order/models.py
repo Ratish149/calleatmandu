@@ -175,6 +175,17 @@ class Order(BaseModel):
         if not self.barcode_number:
             self.barcode_number = generate_barcode_number()
 
+        # Recalculate total_amount on save to guarantee consistency across all update paths
+        subtotal = float(self.subtotal or 0.0)
+        delivery_fee = float(self.delivery_fee or 0.0)
+        discount_amount = float(self.discount_amount or 0.0)
+        self.total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
+
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            update_fields.add("total_amount")
+            kwargs["update_fields"] = list(update_fields)
+
         super().save(*args, **kwargs)
 
         if status_changed:
