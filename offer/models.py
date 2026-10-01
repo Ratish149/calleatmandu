@@ -98,16 +98,38 @@ class PromoCode(BaseModel):
             return round(discount, 2)
 
         # Calculate eligible subtotal based on scope
-        if self.scope == self.ScopeType.CATEGORY and cart_items:
+        if self.scope == self.ScopeType.CATEGORY:
+            if not cart_items:
+                return 0.0
             category_ids = (
                 set(self.categories.values_list("id", flat=True)) if self.pk else set()
             )
+            # Resolve category_id if missing from any cart item
+            missing_cat_pids = [
+                item["product_id"]
+                for item in cart_items
+                if not item.get("category_id") and item.get("product_id")
+            ]
+            if missing_cat_pids:
+                from product.models import Product
+
+                cat_map = dict(
+                    Product.objects.filter(id__in=missing_cat_pids).values_list(
+                        "id", "category_id"
+                    )
+                )
+                for item in cart_items:
+                    if not item.get("category_id") and item.get("product_id") in cat_map:
+                        item["category_id"] = cat_map[item["product_id"]]
+
             eligible_subtotal = sum(
                 item.get("price", 0.0) * item.get("quantity", 1)
                 for item in cart_items
                 if item.get("category_id") in category_ids
             )
-        elif self.scope == self.ScopeType.PRODUCT and cart_items:
+        elif self.scope == self.ScopeType.PRODUCT:
+            if not cart_items:
+                return 0.0
             target_product_ids = (
                 set(self.products.values_list("id", flat=True)) if self.pk else set()
             )

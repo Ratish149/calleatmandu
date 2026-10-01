@@ -146,6 +146,8 @@ class OrderService:
                     promo_code_obj = PromoCode.objects.filter(
                         code__iexact=offer_res["promo_code"]
                     ).first()
+            elif promo_code_str:
+                raise ValueError(offer_res["message"])
 
         # If discount_amount is explicitly provided in the payload from frontend, save it
         payload_discount = order_data.get("discount_amount")
@@ -450,6 +452,8 @@ class OrderService:
                     promo_code_obj = PromoCode.objects.filter(
                         code__iexact=offer_res["promo_code"]
                     ).first()
+            elif promo_code_str:
+                raise ValueError(offer_res["message"])
 
         # If discount_amount is explicitly provided in the payload from frontend, save it
         payload_discount = order_data.get("discount_amount")
