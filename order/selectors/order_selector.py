@@ -94,3 +94,62 @@ def get_order_by_number_with_relations(order_number: str):
         .filter(order_number=order_number)
         .first()
     )
+
+
+def get_orders_for_user_queryset(user):
+    """
+    Optimized selector to retrieve orders tailored to the authenticated user's role and branch scope.
+    - If user has an assigned branch (user.branch_id):
+      - If user is admin (or superuser): returns orders belonging to user.branch PLUS any orders linked to that admin (created_by or user).
+      - If user is non-admin: returns only orders belonging to user.branch.
+    - If user does not have an assigned branch:
+      - If user is superuser: returns all orders.
+      - If user is admin: returns orders linked to that admin (created_by or user).
+      - If user is rider: returns orders assigned to this rider.
+      - If user is customer / other: returns only orders placed by this user.
+    - If unauthenticated: returns empty queryset.
+    """
+    base_queryset = (
+        Order.objects
+        .select_related(
+            "branch",
+            "user",
+            "created_by",
+            "assigned_to_rider",
+            "offer",
+            "promo_code",
+        )
+        .prefetch_related(
+            "items__product",
+            "items__selected_extras",
+            "nps_transactions",
+            "status_history__changed_by",
+        )
+        .order_by("-created_at")
+    )
+
+    if not (user and user.is_authenticated):
+        return base_queryset.none()
+
+    is_admin = user.is_superuser or getattr(user, "role", None) == "admin"
+    branch_id = getattr(user, "branch_id", None)
+
+    if branch_id:
+        if is_admin:
+            return base_queryset.filter(
+                Q(branch_id=branch_id) | Q(created_by=user) | Q(user=user)
+            )
+        return base_queryset.filter(branch_id=branch_id)
+
+    # When user has no assigned branch:
+    if user.is_superuser:
+        return base_queryset
+
+    if is_admin:
+        return base_queryset.filter(Q(created_by=user) | Q(user=user))
+
+    if getattr(user, "role", None) == "rider":
+        return base_queryset.filter(assigned_to_rider=user)
+
+    return base_queryset.filter(user=user)
+

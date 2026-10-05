@@ -20,6 +20,7 @@ from order.selectors import (
     get_activity_logs_queryset,
     get_customer_orders_queryset,
     get_order_activity_logs_queryset,
+    get_orders_for_user_queryset,
 )
 from order.serializers import (
     ActivityLogSerializer,
@@ -41,42 +42,7 @@ class OrderListCreateAPIView(ListCreateAPIView):
     search_fields = ["customer_name", "phone_number", "order_number", "barcode_number"]
 
     def get_queryset(self):
-        queryset = (
-            Order.objects
-            .select_related(
-                "branch",
-                "user",
-                "created_by",
-                "assigned_to_rider",
-                "offer",
-                "promo_code",
-            )
-            .prefetch_related(
-                "items__product",
-                "items__selected_extras",
-                "nps_transactions",
-                "status_history__changed_by",
-            )
-            .order_by("-created_at")
-        )
-        user = self.request.user
-
-        if user and user.is_authenticated:
-            # If user is a customer, return only orders belonging to that customer
-            if getattr(user, "role", None) == "customer" or not (
-                user.is_superuser
-                or user.is_staff
-                or getattr(user, "role", None) in ALLOWED_STAFF_ROLES
-            ):
-                queryset = queryset.filter(user=user)
-            # If user is a rider, return orders assigned to this rider
-            elif getattr(user, "role", None) == "rider":
-                queryset = queryset.filter(assigned_to_rider=user)
-            # If staff user has an assigned branch, return orders belonging to that branch only
-            elif getattr(user, "branch_id", None):
-                queryset = queryset.filter(branch_id=user.branch_id)
-
-        return queryset
+        return get_orders_for_user_queryset(self.request.user)
 
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
