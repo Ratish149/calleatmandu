@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from django.db.models import QuerySet
 
@@ -6,14 +6,18 @@ from order.models import Order
 from tracking.models import RiderLocation
 
 
-def get_active_riders_locations_qs() -> QuerySet[RiderLocation]:
+def get_active_riders_locations_qs(
+    branch_id: Optional[Union[int, str]] = None,
+) -> QuerySet[RiderLocation]:
     """
     Returns an optimized QuerySet of all rider locations, selecting
     related user details and assigned branch information to avoid N+1 queries.
     Strictly filters for users with role='rider'.
+    Optionally filters by rider's branch_id.
     """
-    return (
-        RiderLocation.objects.select_related(
+    qs = (
+        RiderLocation.objects
+        .select_related(
             "rider",
             "rider__branch",
         )
@@ -35,6 +39,9 @@ def get_active_riders_locations_qs() -> QuerySet[RiderLocation]:
         )
         .order_by("-last_updated_at")
     )
+    if branch_id is not None:
+        qs = qs.filter(rider__branch_id=branch_id)
+    return qs
 
 
 def get_rider_location_by_user(rider_user_id: int) -> Optional[RiderLocation]:
@@ -43,7 +50,8 @@ def get_rider_location_by_user(rider_user_id: int) -> Optional[RiderLocation]:
     Strictly filters for users with role='rider'.
     """
     return (
-        RiderLocation.objects.select_related("rider", "rider__branch")
+        RiderLocation.objects
+        .select_related("rider", "rider__branch")
         .only(
             "id",
             "latitude",
@@ -70,7 +78,8 @@ def get_customer_order_tracking(order_number: str) -> Optional[Order]:
     required for customer real-time tracking.
     """
     return (
-        Order.objects.select_related(
+        Order.objects
+        .select_related(
             "assigned_to_rider",
             "assigned_to_rider__location",
             "branch",
@@ -109,7 +118,8 @@ def get_active_orders_for_rider(rider_user_id: int) -> QuerySet[Order]:
     Returns all active (non-delivered, non-cancelled) orders assigned to a rider.
     """
     return (
-        Order.objects.filter(assigned_to_rider_id=rider_user_id)
+        Order.objects
+        .filter(assigned_to_rider_id=rider_user_id)
         .exclude(status__in=[Order.OrderStatus.DELIVERED, Order.OrderStatus.CANCELLED])
         .only("id", "order_number", "status", "latitude", "longitude")
     )

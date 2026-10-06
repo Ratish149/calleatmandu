@@ -31,7 +31,7 @@ def get_user_from_token(token_string: str):
     try:
         access_token = AccessToken(token_string)
         user_id = access_token.get("user_id")
-        return User.objects.get(id=user_id)
+        return User.objects.select_related("branch").get(id=user_id)
     except Exception as e:
         print(f"❌ [WS AUTH ERROR] Invalid token: {e}")
         return AnonymousUser()
@@ -234,7 +234,7 @@ class RiderLocationConsumer(AsyncJsonWebsocketConsumer):
 class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
     """
     WebSocket consumer for Admins to view the real-time location stream
-    of all active delivery riders across the platform.
+    of active delivery riders for their assigned branch.
     URL: ws://<domain>/ws/tracking/admin/?token=<jwt_access_token>
     """
 
@@ -265,23 +265,35 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
             return
 
         self.user = user
+        self.branch_id = getattr(user, "branch_id", None)
+        if not self.branch_id:
+            branch_param = (
+                query_params.get("branch_id", [None])[0]
+                or query_params.get("branch", [None])[0]
+            )
+            if branch_param:
+                try:
+                    self.branch_id = int(branch_param)
+                except (ValueError, TypeError):
+                    self.branch_id = None
+
         self.group_name = "admin_rider_tracking"
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
         print(
-            f"✅ [WS ADMIN ACCEPTED] Admin: {self.user.username} (ID: {self.user.id}, Role: {role})"
+            f"✅ [WS ADMIN ACCEPTED] Admin: {self.user.username} (ID: {self.user.id}, Role: {role}, Branch ID: {self.branch_id})"
         )
 
-        # Send initial snapshot of all online riders
+        # Send initial snapshot of online riders for this branch
         initial_riders_data = await self._get_initial_riders_data()
         initial_resp = {
             "event": "initial_rider_locations",
             "data": initial_riders_data,
         }
         print(
-            f"📤 [WS ADMIN INITIAL SNAPSHOT SENT] Count: {len(initial_riders_data)} riders:\n{json.dumps(initial_resp, indent=2)}"
+            f"📤 [WS ADMIN INITIAL SNAPSHOT SENT] Count: {len(initial_riders_data)} riders for branch {self.branch_id}:\n{json.dumps(initial_resp, indent=2)}"
         )
         await self.send_json(initial_resp)
 
@@ -294,22 +306,32 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _get_initial_riders_data(self):
-        queryset = get_active_riders_locations_qs()
+        branch_id = getattr(self.user, "branch_id", None)
+        if branch_id is None and hasattr(self, "branch_id"):
+            branch_id = self.branch_id
+        queryset = get_active_riders_locations_qs(branch_id=branch_id)
         serializer = AdminRiderTrackingSerializer(queryset, many=True)
         data = serializer.data
         rider_list = [f"{r.get('username')} (ID:{r.get('rider_id')})" for r in data]
         print(
-            f"🔍 [WS ADMIN SNAPSHOT QUERY] Found {len(data)} rider(s) with role='rider': {rider_list}"
+            f"🔍 [WS ADMIN SNAPSHOT QUERY] Found {len(data)} rider(s) for branch {branch_id} with role='rider': {rider_list}"
         )
         return data
 
     async def rider_location_updated(self, event):
         """
         Handler for real-time rider location updates broadcast from service.
+        Only forwards updates for riders belonging to the admin's branch.
         """
+        data = event.get("data", {})
+        if self.branch_id is not None:
+            rider_branch_id = data.get("branch_id")
+            if rider_branch_id is None or str(rider_branch_id) != str(self.branch_id):
+                return
+
         payload = {
             "event": "rider_location_updated",
-            "data": event.get("data", {}),
+            "data": data,
         }
         print(f"📡 [WS ADMIN BROADCAST SENT] ->\n{json.dumps(payload, indent=2)}")
         await self.send_json(payload)
@@ -317,10 +339,17 @@ class AdminTrackingConsumer(AsyncJsonWebsocketConsumer):
     async def rider_status_changed(self, event):
         """
         Handler for real-time rider online/offline status changes.
+        Only forwards status changes for riders belonging to the admin's branch.
         """
+        data = event.get("data", {})
+        if self.branch_id is not None:
+            rider_branch_id = data.get("branch_id")
+            if rider_branch_id is None or str(rider_branch_id) != str(self.branch_id):
+                return
+
         payload = {
             "event": "rider_status_changed",
-            "data": event.get("data", {}),
+            "data": data,
         }
         print(
             f"📡 [WS ADMIN STATUS BROADCAST SENT] ->\n{json.dumps(payload, indent=2)}"

@@ -103,7 +103,8 @@ class AdminRiderListTrackingAPIView(ListAPIView):
     filterset_class = RiderLocationFilter
 
     def get_queryset(self):
-        return get_active_riders_locations_qs()
+        branch_id = getattr(self.request.user, "branch_id", None)
+        return get_active_riders_locations_qs(branch_id=branch_id)
 
 
 class CustomerOrderTrackingAPIView(RetrieveAPIView):

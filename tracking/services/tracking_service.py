@@ -118,6 +118,7 @@ def toggle_rider_online_status(rider: User, is_online: bool) -> RiderLocation:
                     "rider_id": rider.id,
                     "rider_name": rider_name,
                     "phone_number": getattr(rider, "phone_number", ""),
+                    "branch_id": getattr(rider, "branch_id", None),
                     "is_online": is_online,
                     "last_updated_at": location.last_updated_at.isoformat(),
                 },
