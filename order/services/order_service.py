@@ -100,21 +100,7 @@ class OrderService:
                 delivery_fee = 0.0
 
         order_type = order_data.get("order_type", Order.OrderType.DELIVERY)
-        if order_type == Order.OrderType.DELIVERY and nearest_branch:
-            if payload_delivery_fee is None or delivery_fee == 0.0:
-                try:
-                    from delivery.services.delivery_service import DeliveryService
-
-                    delivery_estimate = DeliveryService.estimate_delivery(
-                        destination_lat=lat,
-                        destination_lng=lon,
-                        branch_id=nearest_branch.id,
-                        allow_fallback=True,
-                    )
-                    delivery_fee = float(delivery_estimate["delivery_charge"])
-                except Exception:
-                    pass
-        elif order_type in (Order.OrderType.TAKEAWAY, Order.OrderType.DINEIN):
+        if order_type in (Order.OrderType.TAKEAWAY, Order.OrderType.DINEIN):
             delivery_fee = 0.0
 
         if promo_code_str or Offer.objects.filter(is_active=True).exists():
