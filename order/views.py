@@ -352,32 +352,18 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 class RecentOrdersAPIView(GenericAPIView):
     """
-    API View to retrieve the 5 most recent orders for any authenticated user.
+    API View to retrieve the most recent orders scoped to user.branch.
     Accepts optional query parameter `limit` (default: 5).
     """
 
     permission_classes = [IsAuthenticated]
     serializer_class = OrderResponseSerializer
 
+    def get_queryset(self):
+        return get_orders_for_user_queryset(self.request.user)
+
     def get(self, request, *args, **kwargs):
-        queryset = (
-            Order.objects
-            .select_related(
-                "branch",
-                "user",
-                "created_by",
-                "assigned_to_rider",
-                "offer",
-                "promo_code",
-            )
-            .prefetch_related(
-                "items__product",
-                "items__selected_extras",
-                "nps_transactions",
-                "status_history__changed_by",
-            )
-            .order_by("-created_at")
-        )
+        queryset = self.get_queryset()
 
         try:
             limit = int(request.query_params.get("limit", 5))
