@@ -283,7 +283,8 @@ class OrderService:
         - `customer_user`: Optional customer User instance to extract customer_name and phone_number.
         - `branch`: Target branch for POS order (or staff's assigned branch).
         - `is_pos_order`: Set to True automatically.
-        - `delivery_location`, `latitude`, `longitude`: Derived from branch (or POS counter defaults).
+        - `delivery_location`: Derived from payload, branch address, or "POS Counter".
+        - `latitude`, `longitude`: Optional coordinates from frontend payload (None if not provided).
         """
         # Determine customer_name and phone_number from payload or customer_user
         raw_customer_name = str(order_data.get("customer_name") or "").strip()
@@ -319,30 +320,22 @@ class OrderService:
             delivery_location = "POS Counter"
 
         lat = order_data.get("latitude")
-        if lat is None:
-            lat = (
-                assigned_branch.latitude
-                if (assigned_branch and assigned_branch.latitude is not None)
-                else 0.0
-            )
-        else:
+        if lat is not None and str(lat).strip() != "":
             try:
                 lat = float(lat)
             except (ValueError, TypeError):
-                lat = 0.0
+                lat = None
+        else:
+            lat = None
 
         lon = order_data.get("longitude")
-        if lon is None:
-            lon = (
-                assigned_branch.longitude
-                if (assigned_branch and assigned_branch.longitude is not None)
-                else 0.0
-            )
-        else:
+        if lon is not None and str(lon).strip() != "":
             try:
                 lon = float(lon)
             except (ValueError, TypeError):
-                lon = 0.0
+                lon = None
+        else:
+            lon = None
 
         promo_code_str = order_data.get("promo_code")
 
