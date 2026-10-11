@@ -147,6 +147,7 @@ class OrderWebSocketService:
             "event": "order.created",
             "order_number": order.order_number,
             "status": order.status,
+            "is_pos_order": order.is_pos_order,
             "data": serialized_data,
         }
 
