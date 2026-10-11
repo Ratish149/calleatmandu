@@ -133,6 +133,16 @@ class OrderWebSocketService:
             )
             return False
 
+        if getattr(order, "is_pos_order", False):
+            logger.info(
+                "OrderWebSocketService: skipping broadcast_order_created for POS order #%s",
+                order.order_number,
+            )
+            print(
+                f"[WS RECEIVE] broadcast_order_created — POS order #{order.order_number} skipped (is_pos_order=True)."
+            )
+            return False
+
         print(
             f"\n[WS RECEIVE] broadcast_order_created triggered"
             f"\n  → Order#  : {order.order_number}"
@@ -282,6 +292,7 @@ class OrderWebSocketService:
             "event": "order.status_updated",
             "order_number": order.order_number,
             "status": new_status,
+            "is_pos_order": order.is_pos_order,
             "comment": comment,
             "data": serialized_data,
         }

@@ -72,8 +72,11 @@ def capture_model_pre_save_snapshot(sender, instance, **kwargs):
 #     Triggered whenever an OrderStatusHistory record is created.
 #     If the status has changed to READY_FOR_PICKUP, broadcasts the complete order details
 #     over the WebSocket after the database transaction successfully commits.
+#     Skips POS orders (is_pos_order=True).
 #     """
 #     if created and instance.status == Order.OrderStatus.READY_FOR_PICKUP:
+#         if instance.order and instance.order.is_pos_order:
+#             return
 #         order_id = instance.order_id
 #         transaction.on_commit(
 #             lambda: OrderWebSocketService.broadcast_order_ready_for_pickup(order_id)
@@ -86,8 +89,11 @@ def capture_model_pre_save_snapshot(sender, instance, **kwargs):
 #     Fallback receiver: If an Order is created outside OrderService (e.g. Django Admin or ORM script),
 #     ensures it is broadcasted over WebSocket after transaction commit.
 #     Orders created through OrderService set `_skip_signal_create = True` so items are fully attached first.
+#     Skips POS orders (is_pos_order=True).
 #     """
 #     if created and not getattr(instance, "_skip_signal_create", False):
+#         if instance.is_pos_order:
+#             return
 #         order_id = instance.id
 #         transaction.on_commit(
 #             lambda: OrderWebSocketService.broadcast_order_created(order_id)

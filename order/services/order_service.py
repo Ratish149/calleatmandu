@@ -261,14 +261,15 @@ class OrderService:
         )
         order._skip_activity_log = False
 
-        # 9. Trigger notification and WebSocket broadcast after transaction commit
-        order_id = order.id
-        transaction.on_commit(
-            lambda: NotificationService.send_order_notification(order)
-        )
-        transaction.on_commit(
-            lambda: OrderWebSocketService.broadcast_order_created(order_id)
-        )
+        # 9. Trigger notification and WebSocket broadcast after transaction commit (non-POS only)
+        if not order.is_pos_order:
+            order_id = order.id
+            transaction.on_commit(
+                lambda: NotificationService.send_order_notification(order)
+            )
+            transaction.on_commit(
+                lambda: OrderWebSocketService.broadcast_order_created(order_id)
+            )
 
         return order
 
@@ -576,14 +577,16 @@ class OrderService:
         )
         order._skip_activity_log = False
 
-        # Trigger notification and WebSocket broadcast
-        order_id = order.id
-        transaction.on_commit(
-            lambda: NotificationService.send_order_notification(order)
-        )
-        transaction.on_commit(
-            lambda: OrderWebSocketService.broadcast_order_created(order_id)
-        )
+        # Note: Notification and WebSocket order_created broadcasts are skipped for POS orders
+        # (is_pos_order=True). Only non-POS (website) orders send notifications.
+        if not order.is_pos_order:
+            order_id = order.id
+            transaction.on_commit(
+                lambda: NotificationService.send_order_notification(order)
+            )
+            transaction.on_commit(
+                lambda: OrderWebSocketService.broadcast_order_created(order_id)
+            )
 
         return order
 
@@ -660,20 +663,21 @@ class OrderService:
 
         order.save()
 
-        # Trigger notification creation and WebSocket push
-        transaction.on_commit(
-            lambda: NotificationService.create_notification(
-                title=f"Order #{order.order_number} {order.get_status_display()}",
-                message=f"Order status updated to {order.get_status_display()}."
-                + (f" Reason: {comment}" if comment else ""),
-                notification_type="order_status_update",
-                data={
-                    "order_number": order.order_number,
-                    "status": order.status,
-                    "old_status": old_status,
-                },
+        # Trigger notification creation and WebSocket push (only for non-POS orders)
+        if not order.is_pos_order:
+            transaction.on_commit(
+                lambda: NotificationService.create_notification(
+                    title=f"Order #{order.order_number} {order.get_status_display()}",
+                    message=f"Order status updated to {order.get_status_display()}."
+                    + (f" Reason: {comment}" if comment else ""),
+                    notification_type="order_status_update",
+                    data={
+                        "order_number": order.order_number,
+                        "status": order.status,
+                        "old_status": old_status,
+                    },
+                )
             )
-        )
 
         return order
 
