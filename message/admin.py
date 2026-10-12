@@ -34,7 +34,7 @@ class PendingOAuthConnectionAdmin(ModelAdmin):
 class MessageInline(TabularInline):
     model = Message
     extra = 0
-    fields = ("direction", "content", "sent_by", "is_read", "created_at")
+    fields = ("direction", "content", "sent_by", "is_ai_generated", "is_read", "created_at")
     readonly_fields = ("created_at",)
 
 
@@ -46,9 +46,11 @@ class ConversationAdmin(ModelAdmin):
         "platform",
         "branch",
         "business_account",
+        "ai_replies_active",
+        "ai_reply_pending",
         "updated_at",
     )
-    list_filter = ("platform", "branch")
+    list_filter = ("platform", "branch", "ai_replies_active", "ai_reply_pending")
     search_fields = ("participant_name", "zernio_conversation_id")
     inlines = [MessageInline]
 
@@ -60,10 +62,11 @@ class MessageAdmin(ModelAdmin):
         "conversation",
         "direction",
         "sent_by",
+        "is_ai_generated",
         "is_read",
         "created_at",
     )
-    list_filter = ("direction", "is_read")
+    list_filter = ("direction", "is_read", "is_ai_generated")
     search_fields = ("content", "zernio_message_id")
 
 

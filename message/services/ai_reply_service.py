@@ -81,6 +81,17 @@ class AIReplyService:
         )
 
     @classmethod
+    def activate(cls, conversation: Conversation) -> None:
+        """Re-enable AI replies for a conversation previously handed over to a human.
+
+        Clears any stale ``ai_reply_pending`` flag so future inbound messages are
+        scheduled again.
+        """
+        Conversation.objects.filter(pk=conversation.pk).update(
+            ai_replies_active=True, ai_reply_pending=False
+        )
+
+    @classmethod
     def _generate_and_send(cls, conversation_id) -> None:
         try:
             conversation = (

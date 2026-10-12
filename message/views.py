@@ -21,6 +21,7 @@ from message.serializers import (
     OAuthConnectURLQuerySerializer,
     SendMessageSerializer,
 )
+from message.services.ai_reply_service import AIReplyService
 from message.services.messaging_service import MessagingService
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,27 @@ class ConversationMarkReadAPIView(APIView):
         try:
             res = service.mark_conversation_as_read(conversation_id, branch_id)
             return Response(res, status=status.HTTP_200_OK)
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ConversationResumeAIAPIView(APIView):
+    """POST /api/conversations/<id>/ai/resume/ Re-enable AI auto-replies for a conversation."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, conversation_id: str):
+        branch_id = get_branch_id_from_request(request)
+        service = MessagingService()
+        try:
+            conversation = service.assert_conversation_belongs_to_branch(
+                conversation_id, branch_id
+            )
+            AIReplyService.activate(conversation)
+            conversation.refresh_from_db()
+            return Response(
+                ConversationSerializer(conversation).data, status=status.HTTP_200_OK
+            )
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

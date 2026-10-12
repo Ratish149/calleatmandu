@@ -17,6 +17,7 @@ from message.consumers import (
     is_authorized_for_account,
 )
 from message.models import BusinessAccount, Conversation, Message
+from message.serializers import ConversationSerializer
 from message.selectors.messaging_selector import (
     get_conversations_for_account,
     get_unread_counts_for_account,
@@ -215,6 +216,47 @@ class HumanTakeoverTest(MessagingTestCase):
         self.assertTrue(
             conversation.messages.get(direction="OUTBOUND").is_ai_generated
         )
+
+
+class ResumeAITest(MessagingTestCase):
+    def test_serializer_exposes_ai_flags(self):
+        conversation = self.make_conversation(active=False, pending=True)
+        data = ConversationSerializer(conversation).data
+        self.assertIn("ai_replies_active", data)
+        self.assertIn("ai_reply_pending", data)
+        self.assertFalse(data["ai_replies_active"])
+        self.assertTrue(data["ai_reply_pending"])
+
+    def test_activate_clears_pending_and_reactivates(self):
+        conversation = self.make_conversation(active=False, pending=True)
+        AIReplyService.activate(conversation)
+        conversation.refresh_from_db()
+        self.assertTrue(conversation.ai_replies_active)
+        self.assertFalse(conversation.ai_reply_pending)
+
+    def test_resume_endpoint_reactivates_conversation(self):
+        conversation = self.make_conversation(active=False, pending=True)
+        response = self.client.post(
+            f"/api/conversations/{conversation.pk}/ai/resume/"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ai_replies_active"])
+        self.assertFalse(response.data["ai_reply_pending"])
+
+        conversation.refresh_from_db()
+        self.assertTrue(conversation.ai_replies_active)
+        self.assertFalse(conversation.ai_reply_pending)
+
+    def test_inbound_after_resume_schedules_reply(self):
+        conversation = self.make_conversation(active=False, pending=False)
+        AIReplyService.activate(conversation)
+        conversation.refresh_from_db()
+        with patch(
+            "message.services.ai_reply_service.threading.Thread"
+        ) as mock_thread:
+            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        self.assertTrue(scheduled)
+        mock_thread.return_value.start.assert_called_once()
 
 
 class OllamaToolLoopTest(TestCase):

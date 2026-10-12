@@ -75,6 +75,8 @@ class ConversationSerializer(serializers.ModelSerializer):
             "applicant_id",
             "contact_id",
             "business_account",
+            "ai_replies_active",
+            "ai_reply_pending",
             "latest_message",
             "unread_count",
             "created_at",
