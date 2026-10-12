@@ -76,6 +76,9 @@ class Conversation(BaseModel):
         related_name="conversations",
     )
 
+    ai_reply_pending = models.BooleanField(default=False, db_index=True)
+    ai_replies_active = models.BooleanField(default=True)
+
     class Meta:
         db_table = "conversations"
         indexes = [
@@ -117,6 +120,7 @@ class Message(BaseModel):
     )
 
     is_read = models.BooleanField(default=False, db_index=True)
+    is_ai_generated = models.BooleanField(default=False)
 
     class Meta:
         db_table = "messages"

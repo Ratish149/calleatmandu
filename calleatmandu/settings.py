@@ -75,23 +75,32 @@ INSTALLED_APPS = [
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
 APP_URL = os.getenv("APP_URL", "")
 
-""" DATABASES = {
+# Ollama (cloud) AI auto-reply configuration
+OLLAMA_KEY = os.getenv("OLLAMA_KEY", "")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+AI_REPLY_ENABLED = os.getenv("AI_REPLY_ENABLED", "true").lower() == "true"
+AI_MAX_TOOL_CALLS = int(os.getenv("AI_MAX_TOOL_CALLS", "5"))
+AI_HISTORY_MESSAGES = int(os.getenv("AI_HISTORY_MESSAGES", "20"))
+
+DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
     }
-} """
-
-DATABASES = {
-    "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
-        "NAME": os.getenv("DB_NAME", ""),
-        "USER": os.getenv("DB_USER", ""),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", ""),
-        "PORT": os.getenv("DB_PORT", "5432"),
-    }
 }
+
+# DATABASES = {
+#     "default": {
+#         "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
+#         "NAME": os.getenv("DB_NAME", ""),
+#         "USER": os.getenv("DB_USER", ""),
+#         "PASSWORD": os.getenv("DB_PASSWORD", ""),
+#         "HOST": os.getenv("DB_HOST", ""),
+#         "PORT": os.getenv("DB_PORT", "5432"),
+#     }
+# }
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True

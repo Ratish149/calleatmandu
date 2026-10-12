@@ -46,6 +46,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "sent_by",
             "sent_by_username",
             "is_read",
+            "is_ai_generated",
             "attachments",
             "created_at",
             "updated_at",

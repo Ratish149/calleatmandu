@@ -65,6 +65,46 @@ def get_unread_counts_for_branch(
     return {row["conversation_id"]: row["unread_count"] for row in rows}
 
 
+def get_conversations_for_account(
+    business_account_id: Optional[Union[int, str]] = None,
+) -> QuerySet[Conversation]:
+    """Retrieve conversations belonging to a single business account."""
+    if business_account_id is None:
+        return Conversation.objects.none()
+
+    return (
+        Conversation.objects
+        .select_related("business_account", "branch")
+        .filter(business_account_id=business_account_id)
+        .order_by("-updated_at")
+    )
+
+
+def get_unread_counts_for_account(
+    business_account_id: Optional[Union[int, str]] = None,
+) -> Dict[str, int]:
+    """Get count of unread inbound messages grouped by conversation_id for one business account."""
+    if business_account_id is None:
+        return {}
+
+    conversation_ids = Conversation.objects.filter(
+        business_account_id=business_account_id
+    ).values_list("id", flat=True)
+
+    rows = (
+        Message.objects
+        .filter(
+            conversation_id__in=conversation_ids,
+            direction="INBOUND",
+            is_read=False,
+        )
+        .values("conversation_id")
+        .annotate(unread_count=Count("id"))
+    )
+
+    return {row["conversation_id"]: row["unread_count"] for row in rows}
+
+
 def get_linked_accounts_for_branch(
     branch_id: Optional[Union[int, str]] = None,
 ) -> QuerySet[BusinessAccount]:

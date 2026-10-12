@@ -14,6 +14,7 @@ from message.models import (
     Message,
     PendingOAuthConnection,
 )
+from message.services.ai_reply_service import AIReplyService
 from message.services.messaging_broadcaster import MessagingBroadcaster
 from message.services.zernio_service import ZernioService
 
@@ -65,11 +66,16 @@ class MessagingService:
         message_text: str,
         branch_id: Optional[Union[int, str]] = None,
         user=None,
+        is_ai_generated: bool = False,
     ) -> Dict[str, Any]:
         """Send an outbound message to a conversation via Zernio and save it in DB."""
         conversation = self.assert_conversation_belongs_to_branch(
             conversation_id, branch_id
         )
+
+        if not is_ai_generated:
+            # A human replied: cancel any pending AI reply and hand over permanently.
+            AIReplyService.deactivate(conversation)
 
         try:
             result = self.zernio_service.send_inbox_message(
@@ -88,6 +94,7 @@ class MessagingService:
                 content=message_text,
                 direction="OUTBOUND",
                 sent_by=user if getattr(user, "is_authenticated", False) else None,
+                is_ai_generated=is_ai_generated,
             )
 
             # Assign branch to conversation if not already set
@@ -392,6 +399,9 @@ class MessagingService:
                 )
                 MessagingBroadcaster.broadcast_conversation_updated(conversation)
 
+                # Instantaneous Ollama auto-reply (runs in a background thread)
+                AIReplyService.maybe_schedule_reply(conversation)
+
         return payload
 
     def mark_conversation_as_read(
@@ -405,13 +415,8 @@ class MessagingService:
             conversation=conversation, direction="INBOUND", is_read=False
         ).update(is_read=True)
 
-        effective_branch_id = conversation.branch_id or (
-            conversation.business_account.branch_id
-            if conversation.business_account
-            else branch_id
-        )
         MessagingBroadcaster.broadcast_unread_counts_updated(
-            branch_id=effective_branch_id,
+            business_account_id=conversation.business_account_id,
             conversation_id=conversation.id,
         )
         MessagingBroadcaster.broadcast_conversation_updated(conversation)

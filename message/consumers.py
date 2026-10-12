@@ -3,182 +3,199 @@ from urllib.parse import parse_qs
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.tokens import AccessToken
 
+from common.permissions import ALLOWED_STAFF_ROLES
+from message.models import BusinessAccount
 from message.selectors.messaging_selector import (
-    get_conversations_for_branch,
-    get_unread_counts_for_branch,
+    get_conversations_for_account,
+    get_unread_counts_for_account,
 )
 from message.serializers import ConversationSerializer
+from message.services.messaging_broadcaster import MessagingBroadcaster
 
 User = get_user_model()
 
 
 @database_sync_to_async
-def get_user_from_token(token_string: str):
-    """Validates SimpleJWT access token string and returns the associated User instance."""
+def get_user_from_token(token):
     try:
-        access_token = AccessToken(token_string)
-        user_id = access_token.get("user_id")
-        return User.objects.select_related("branch").get(id=user_id)
+        access_token = AccessToken(token)
     except Exception:
-        return AnonymousUser()
+        return None
+    try:
+        return User.objects.select_related("branch").get(id=access_token["user_id"])
+    except User.DoesNotExist:
+        return None
 
 
 @database_sync_to_async
-def fetch_initial_unread_counts(branch_id):
-    return get_unread_counts_for_branch(branch_id)
+def get_business_account_scope(business_account_id):
+    """Return {"id", "branch_id"} for the account, or None if it is invalid/missing."""
+    try:
+        account_pk = int(business_account_id)
+    except (TypeError, ValueError):
+        return None
+    return (
+        BusinessAccount.objects
+        .filter(id=account_pk)
+        .values("id", "branch_id")
+        .first()
+    )
 
 
 @database_sync_to_async
-def fetch_initial_conversations(branch_id):
-    qs = get_conversations_for_branch(branch_id=branch_id)
-    return ConversationSerializer(qs, many=True).data
+def fetch_initial_unread_counts(business_account_id):
+    return get_unread_counts_for_account(business_account_id)
 
 
-class UnreadMessagesConsumer(AsyncJsonWebsocketConsumer):
-    """WebSocket consumer for real-time unread counts and message arrival notifications.
+@database_sync_to_async
+def fetch_initial_conversations(business_account_id):
+    queryset = get_conversations_for_account(business_account_id)
+    return ConversationSerializer(queryset, many=True).data
 
-    Endpoints:
-      - ws://<domain>/ws/messaging/unread/<branch_id>/?token=<jwt_access_token>
-      - ws://<domain>/ws/messaging/unread/?branch_id=<branch_id>&token=<jwt_access_token>
+
+def is_authorized_for_account(user, account) -> bool:
+    """Only staff/operational users may subscribe, and non-admins are limited to their own branch."""
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+
+    role = getattr(user, "role", None)
+    is_admin = bool(user.is_superuser or user.is_staff or role == "admin")
+    if not (is_admin or role in ALLOWED_STAFF_ROLES):
+        return False
+    if is_admin:
+        return True
+
+    account_branch_id = account.get("branch_id")
+    user_branch_id = getattr(user, "branch_id", None)
+    if account_branch_id is None or user_branch_id is None:
+        return False
+    return str(user_branch_id) == str(account_branch_id)
+
+
+class AccountScopedMessagingConsumer(AsyncJsonWebsocketConsumer):
+    """Base consumer that authenticates a JWT, validates access to a single business account,
+
+    and joins only that account's realtime group. No global/branch groups are used, so events
+    never leak across accounts.
     """
 
-    async def connect(self):
+    group_suffix = ""
+
+    async def _resolve_scope(self):
         query_string = self.scope.get("query_string", b"").decode("utf-8")
         query_params = parse_qs(query_string)
 
-        # Authenticate via JWT token if passed in query string
         token_list = query_params.get("token", [])
-        user = self.scope.get("user")
         if token_list:
             user = await get_user_from_token(token_list[0])
-            self.scope["user"] = user
+            if user is not None:
+                self.scope["user"] = user
 
-        # Resolve branch_id from URL kwargs, query params, or user token
-        branch_id = self.scope.get("url_route", {}).get("kwargs", {}).get("branch_id")
-        if not branch_id or branch_id in ["all", "None"]:
-            branch_id = (
-                query_params.get("branch_id", [None])[0]
-                or query_params.get("branch", [None])[0]
+        business_account_id = self.scope.get("url_route", {}).get("kwargs", {}).get(
+            "business_account_id"
+        )
+        if not business_account_id or business_account_id in ["all", "None"]:
+            business_account_id = (
+                query_params.get("business_account_id", [None])[0]
+                or query_params.get("account_id", [None])[0]
+                or query_params.get("account", [None])[0]
             )
 
-        if not branch_id and user and user.is_authenticated and getattr(user, "branch_id", None):
-            branch_id = str(user.branch_id)
+        return str(business_account_id) if business_account_id else None
 
-        self.branch_id = str(branch_id) if branch_id else None
-        self.branch_group = (
-            f"messaging_unread_branch_{self.branch_id}"
-            if self.branch_id
-            else None
+    async def connect(self):
+        self.business_account_id = await self._resolve_scope()
+        self.group_name = None
+
+        if not self.business_account_id:
+            await self.close(code=4400)
+            return
+
+        account = await get_business_account_scope(self.business_account_id)
+        if account is None:
+            await self.close(code=4404)
+            return
+
+        user = self.scope.get("user")
+        if not is_authorized_for_account(user, account):
+            await self.close(code=4403)
+            return
+
+        self.group_name = MessagingBroadcaster.group_name(
+            self.group_suffix, self.business_account_id
         )
-        self.all_group = "messaging_unread_all"
-
-        if self.branch_group:
-            await self.channel_layer.group_add(self.branch_group, self.channel_name)
-        await self.channel_layer.group_add(self.all_group, self.channel_name)
-
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        await self.on_connected()
 
-        # Send initial unread counts to the client immediately upon connection
-        initial_counts = await fetch_initial_unread_counts(self.branch_id)
+    async def on_connected(self):
+        pass
+
+    async def disconnect(self, close_code):
+        if getattr(self, "group_name", None):
+            await self.channel_layer.group_discard(
+                self.group_name, self.channel_name
+            )
+
+
+class UnreadMessagesConsumer(AccountScopedMessagingConsumer):
+    """WebSocket consumer for realtime unread counts and new messages of ONE business account.
+
+    Endpoints:
+      - ws://<domain>/ws/messaging/unread/account/<business_account_id>/?token=<jwt>
+      - ws://<domain>/ws/messaging/unread/?business_account_id=<id>&token=<jwt>
+    """
+
+    group_suffix = "unread"
+
+    async def on_connected(self):
+        initial_counts = await fetch_initial_unread_counts(self.business_account_id)
         await self.send_json({
             "event": "unread_counts.initial",
-            "branch_id": self.branch_id,
+            "business_account_id": self.business_account_id,
             "data": initial_counts,
         })
 
-    async def disconnect(self, close_code):
-        if self.branch_group:
-            await self.channel_layer.group_discard(
-                self.branch_group, self.channel_name
-            )
-        await self.channel_layer.group_discard(self.all_group, self.channel_name)
-
     async def new_message(self, event):
-        """Dispatched when a new inbound/outbound message arrives."""
         await self.send_json({
             "event": event.get("event", "message.received"),
             "data": event.get("data", {}),
         })
 
     async def unread_counts_update(self, event):
-        """Dispatched when unread counts are updated (e.g. mark-as-read)."""
         await self.send_json({
             "event": event.get("event", "unread_counts.updated"),
             "data": event.get("data", {}),
         })
 
 
-class ConversationsConsumer(AsyncJsonWebsocketConsumer):
-    """WebSocket consumer for real-time conversation notifications (new conversations and updates).
+class ConversationsConsumer(AccountScopedMessagingConsumer):
+    """WebSocket consumer for realtime conversations of ONE business account.
 
     Endpoints:
-      - ws://<domain>/ws/messaging/conversations/<branch_id>/?token=<jwt_access_token>
-      - ws://<domain>/ws/messaging/conversations/?branch_id=<branch_id>&token=<jwt_access_token>
+      - ws://<domain>/ws/messaging/conversations/account/<business_account_id>/?token=<jwt>
+      - ws://<domain>/ws/messaging/conversations/?business_account_id=<id>&token=<jwt>
     """
 
-    async def connect(self):
-        query_string = self.scope.get("query_string", b"").decode("utf-8")
-        query_params = parse_qs(query_string)
+    group_suffix = "conversations"
 
-        # Authenticate via JWT token if passed in query string
-        token_list = query_params.get("token", [])
-        user = self.scope.get("user")
-        if token_list:
-            user = await get_user_from_token(token_list[0])
-            self.scope["user"] = user
-
-        # Resolve branch_id from URL kwargs, query params, or user token
-        branch_id = self.scope.get("url_route", {}).get("kwargs", {}).get("branch_id")
-        if not branch_id or branch_id in ["all", "None"]:
-            branch_id = (
-                query_params.get("branch_id", [None])[0]
-                or query_params.get("branch", [None])[0]
-            )
-
-        if not branch_id and user and user.is_authenticated and getattr(user, "branch_id", None):
-            branch_id = str(user.branch_id)
-
-        self.branch_id = str(branch_id) if branch_id else None
-        self.branch_group = (
-            f"messaging_conversations_branch_{self.branch_id}"
-            if self.branch_id
-            else None
-        )
-        self.all_group = "messaging_conversations_all"
-
-        if self.branch_group:
-            await self.channel_layer.group_add(self.branch_group, self.channel_name)
-        await self.channel_layer.group_add(self.all_group, self.channel_name)
-
-        await self.accept()
-
-        # Send initial conversation list to the client upon connection
-        initial_conversations = await fetch_initial_conversations(self.branch_id)
+    async def on_connected(self):
+        initial = await fetch_initial_conversations(self.business_account_id)
         await self.send_json({
             "event": "conversations.initial",
-            "branch_id": self.branch_id,
-            "data": initial_conversations,
+            "business_account_id": self.business_account_id,
+            "data": initial,
         })
 
-    async def disconnect(self, close_code):
-        if self.branch_group:
-            await self.channel_layer.group_discard(
-                self.branch_group, self.channel_name
-            )
-        await self.channel_layer.group_discard(self.all_group, self.channel_name)
-
     async def conversation_created(self, event):
-        """Dispatched when a new conversation is created."""
         await self.send_json({
             "event": event.get("event", "conversation.created"),
             "data": event.get("data", {}),
         })
 
     async def conversation_updated(self, event):
-        """Dispatched when an existing conversation has new message/unread update."""
         await self.send_json({
             "event": event.get("event", "conversation.updated"),
             "data": event.get("data", {}),
