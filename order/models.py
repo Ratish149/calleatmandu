@@ -41,6 +41,10 @@ class Order(BaseModel):
         TAKEAWAY = "TAKEAWAY", "Takeaway"
         DINEIN = "DINEIN", "Dine in"
 
+    class DiscountType(models.TextChoices):
+        AMOUNT = "AMOUNT", "Amount"
+        PERCENTAGE = "PERCENTAGE", "Percentage"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -67,6 +71,12 @@ class Order(BaseModel):
 
     # Financial & Offer Info
     subtotal = models.FloatField(default=0.0)
+    discount_type = models.CharField(
+        max_length=20,
+        choices=DiscountType.choices,
+        default=DiscountType.AMOUNT,
+        db_index=True,
+    )
     discount_amount = models.FloatField(default=0.0)
     delivery_fee = models.FloatField(default=0.0)
     total_amount = models.FloatField(default=0.0)

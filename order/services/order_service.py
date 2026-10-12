@@ -145,6 +145,19 @@ class OrderService:
             except (ValueError, TypeError):
                 pass
 
+        # Determine discount_type
+        discount_type = order_data.get("discount_type")
+        if not discount_type:
+            if offer_obj and offer_obj.offer_type == Offer.OfferType.PERCENTAGE:
+                discount_type = Order.DiscountType.PERCENTAGE
+            elif (
+                promo_code_obj
+                and promo_code_obj.promo_type == PromoCode.PromoCodeType.PERCENTAGE
+            ):
+                discount_type = Order.DiscountType.PERCENTAGE
+            else:
+                discount_type = Order.DiscountType.AMOUNT
+
         discount_amount = round(min(discount_amount, subtotal), 2)
 
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
@@ -160,6 +173,7 @@ class OrderService:
             longitude=lon,
             special_note=order_data.get("special_note", ""),
             subtotal=subtotal,
+            discount_type=discount_type,
             discount_amount=discount_amount,
             delivery_fee=delivery_fee,
             total_amount=total_amount,
@@ -445,6 +459,19 @@ class OrderService:
             except (ValueError, TypeError):
                 pass
 
+        # Determine discount_type
+        discount_type = order_data.get("discount_type")
+        if not discount_type:
+            if offer_obj and offer_obj.offer_type == Offer.OfferType.PERCENTAGE:
+                discount_type = Order.DiscountType.PERCENTAGE
+            elif (
+                promo_code_obj
+                and promo_code_obj.promo_type == PromoCode.PromoCodeType.PERCENTAGE
+            ):
+                discount_type = Order.DiscountType.PERCENTAGE
+            else:
+                discount_type = Order.DiscountType.AMOUNT
+
         discount_amount = round(min(discount_amount, subtotal), 2)
 
         # Delivery fee from payload if provided
@@ -472,6 +499,7 @@ class OrderService:
             longitude=lon,
             special_note=order_data.get("special_note", ""),
             subtotal=subtotal,
+            discount_type=discount_type,
             discount_amount=discount_amount,
             delivery_fee=delivery_fee,
             total_amount=total_amount,

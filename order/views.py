@@ -275,6 +275,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             "special_note",
             "payment_type",
             "is_paid",
+            "discount_type",
         ]
         for field in updatable_fields:
             if field in raw:
@@ -285,6 +286,9 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
                         value = value.lower() in ("true", "1", "yes")
                     else:
                         value = bool(value)
+                elif field == "discount_type":
+                    if value not in Order.DiscountType.values:
+                        continue
                 setattr(order, field, value)
 
         # ── Handle delivery_fee / delivery_amount update ─────────────────────
@@ -330,6 +334,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             total_amount=order.total_amount,
             delivery_fee=order.delivery_fee,
             discount_amount=order.discount_amount,
+            discount_type=order.discount_type,
         )
 
     def update(self, request, *args, **kwargs):
