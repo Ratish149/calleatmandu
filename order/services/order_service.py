@@ -298,7 +298,7 @@ class OrderService:
         - `customer_user`: Optional customer User instance to extract customer_name and phone_number.
         - `branch`: Target branch for POS order (or staff's assigned branch).
         - `is_pos_order`: Set to True automatically.
-        - `delivery_location`: Derived from payload, branch address, or "POS Counter".
+        - `delivery_location`: Optional delivery location from payload (None if not provided).
         - `latitude`, `longitude`: Optional coordinates from frontend payload (None if not provided).
         """
         # Determine customer_name and phone_number from payload or customer_user
@@ -309,30 +309,29 @@ class OrderService:
             customer_name = raw_customer_name
         elif customer_user:
             full_name = customer_user.get_full_name().strip()
-            customer_name = full_name if full_name else customer_user.username
+            username = str(getattr(customer_user, "username", "") or "").strip()
+            customer_name = full_name if full_name else (username or None)
         else:
-            customer_name = "POS Customer"
+            customer_name = None
 
         if raw_phone_number:
             phone_number = raw_phone_number
         elif customer_user:
-            phone_number = getattr(customer_user, "phone_number", "") or "N/A"
+            user_phone = str(getattr(customer_user, "phone_number", "") or "").strip()
+            phone_number = user_phone if user_phone else None
         else:
-            phone_number = "N/A"
+            phone_number = None
 
         # Determine target branch
         assigned_branch = branch
         if not assigned_branch and hasattr(created_by, "branch"):
             assigned_branch = created_by.branch
 
-        # Determine location parameters from payload, branch, or defaults
-        raw_delivery_location = str(order_data.get("delivery_location") or "").strip()
-        if raw_delivery_location:
-            delivery_location = raw_delivery_location
-        elif assigned_branch:
-            delivery_location = assigned_branch.address or "POS Counter"
-        else:
-            delivery_location = "POS Counter"
+        # Determine location parameters from payload
+        raw_delivery_location = str(
+            order_data.get("delivery_location") or order_data.get("address") or ""
+        ).strip()
+        delivery_location = raw_delivery_location if raw_delivery_location else None
 
         lat = order_data.get("latitude")
         if lat is not None and str(lat).strip() != "":
