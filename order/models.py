@@ -6,6 +6,34 @@ from django.db import models
 from common.models import BaseModel
 
 
+class OrderConfig(models.Model):
+    take_order = models.BooleanField(default=True, blank=False, null=False)
+
+    def __str__(self):
+        return (
+            f"Order Config ({self.id}) - {'Enabled' if self.take_order else 'Disabled'}"
+        )
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Prevent deletion of the singleton instance
+        pass
+
+    @classmethod
+    def get_instance(cls):
+        """
+        Retrieves or initializes the singleton instance.
+        """
+        obj, _ = cls.objects.get_or_create(
+            pk=1,
+            defaults={"take_order": True},
+        )
+        return obj
+
+
 def generate_order_number():
     """Generate a unique order number like EAT_482931."""
     while True:
@@ -189,7 +217,9 @@ class Order(BaseModel):
         subtotal = float(self.subtotal or 0.0)
         delivery_fee = float(self.delivery_fee or 0.0)
         discount_amount = float(self.discount_amount or 0.0)
-        self.total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
+        self.total_amount = max(
+            0.0, round(subtotal - discount_amount + delivery_fee, 2)
+        )
 
         if "update_fields" in kwargs and kwargs["update_fields"] is not None:
             update_fields = set(kwargs["update_fields"])

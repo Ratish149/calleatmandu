@@ -6,6 +6,7 @@ from account.serializers import BranchSerializer
 from order.models import (
     ActivityLog,
     Order,
+    OrderConfig,
     OrderItem,
     OrderItemExtra,
     OrderStatusHistory,
@@ -566,3 +567,17 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         ):
             attrs["user"] = request.user
         return attrs
+
+
+# ---------------------------------------------------------------------------
+# Order Config (Singleton)
+# ---------------------------------------------------------------------------
+
+
+class OrderConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderConfig
+        fields = ["id", "take_order"]
+        read_only_fields = ["id"]
+
+

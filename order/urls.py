@@ -6,6 +6,7 @@ from order.views import (
     AssignRiderAPIView,
     CustomerOrderHistoryAPIView,
     OrderActivityLogListAPIView,
+    OrderConfigAPIView,
     OrderListCreateAPIView,
     OrderRetrieveUpdateDestroyAPIView,
     OrderStatusUpdateAPIView,
@@ -15,6 +16,7 @@ from order.views import (
 )
 
 urlpatterns = [
+    path("orders/config/", OrderConfigAPIView.as_view(), name="order-config"),
     path("orders/", OrderListCreateAPIView.as_view(), name="order-list-create"),
     path(
         "orders/recent/",

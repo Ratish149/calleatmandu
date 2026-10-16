@@ -6,6 +6,7 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView,
     ListCreateAPIView,
+    RetrieveUpdateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
@@ -16,21 +17,25 @@ from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
 from common.utils import CustomPagination
 from order.filters import ActivityLogFilter, OrderFilter
 from order.models import Order
+from order.permissions import IsStaffOrReadOnly
 from order.selectors import (
     get_activity_logs_queryset,
     get_customer_orders_queryset,
     get_order_activity_logs_queryset,
+    get_order_config,
     get_orders_for_user_queryset,
 )
 from order.serializers import (
     ActivityLogSerializer,
     AssignRiderSerializer,
+    OrderConfigSerializer,
     OrderCreateSerializer,
     OrderResponseSerializer,
     OrderStatusUpdateSerializer,
     POSOrderCreateSerializer,
     PublicOrderUpdateSerializer,
 )
+from order.services.order_config_service import OrderConfigService
 from order.services.order_service import OrderService
 
 
@@ -547,3 +552,27 @@ class OrderActivityLogListAPIView(ListAPIView):
         if not order_number:
             raise NotFound("Order number is required.")
         return get_order_activity_logs_queryset(order_number)
+
+
+class OrderConfigAPIView(RetrieveUpdateAPIView):
+    """
+    Single API to manage the singleton order configuration:
+    - GET: Retrieve current configuration.
+    - POST: Toggle status (or update if value passed in body).
+    - PUT/PATCH: Update status explicitly.
+    """
+
+    serializer_class = OrderConfigSerializer
+    permission_classes = [IsStaffOrReadOnly]
+
+    def get_object(self):
+        return get_order_config()
+
+    def post(self, request, *args, **kwargs):
+        if "take_order" in request.data:
+            return self.partial_update(request, *args, **kwargs)
+        config = OrderConfigService.toggle_take_order()
+        serializer = self.get_serializer(config)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+

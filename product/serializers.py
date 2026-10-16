@@ -120,6 +120,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "type",
             "image",
             "extras",
+            "take_order",
         ]
 
     def get_offer_price(self, obj):
@@ -168,6 +169,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "extras",
             "images",
             "stock",
+            "take_order",
             "created_at",
             "updated_at",
         ]
@@ -225,6 +227,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "prepare_time",
             "extras",
             "images",
+            "take_order",
             "stock",
         ]
 
