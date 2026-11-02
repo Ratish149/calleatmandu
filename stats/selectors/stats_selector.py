@@ -13,16 +13,18 @@ def get_night_service_shift_range(
 ) -> Tuple[datetime, datetime]:
     """
     Returns (start_dt, end_dt) for the night service shift:
-    Starts at 6:00 PM (18:00:00) and ends at 4:00 AM (04:00:00) the next day
+    Starts at 6:00 PM (18:00:00) and ends at 4:00 AM (04:00:00) the following morning
     in the application's timezone (Asia/Kathmandu).
 
-    - If `target_date` is provided (date object or 'YYYY-MM-DD' string):
+    - If `target_date` is explicitly provided (date object or 'YYYY-MM-DD' string):
       The shift runs from target_date at 18:00:00 to (target_date + 1 day) at 04:00:00.
     - If `target_date` is not provided (None):
-      Resolves current local time in Kathmandu.
-      If current local time is before 04:00:00 AM (e.g., 01:30 AM), it belongs to
-      the active night service shift that started yesterday at 18:00:00.
-      Otherwise (from 04:00:00 AM onwards), it represents the shift starting today at 18:00:00.
+      The operating day rolls over at 6:00 PM (18:00:00) when the night service opens.
+      - Before 6:00 PM (including afternoon, morning, and late night before 04:00 AM):
+        The shift represents the service that started yesterday at 18:00:00 and ended
+        today at 04:00:00, ensuring afternoon/daytime views do not show 0 orders.
+      - From 6:00 PM onwards:
+        The new night service shift begins today at 18:00:00 and runs until tomorrow at 04:00:00.
     """
     tz = timezone.get_current_timezone()
     now_local = timezone.localtime(timezone.now(), tz)
@@ -33,20 +35,15 @@ def get_night_service_shift_range(
             parsed_date = datetime.strptime(target_date.strip(), "%Y-%m-%d").date()
         except (ValueError, TypeError):
             parsed_date = None
-    elif (
-        hasattr(target_date, "year")
-        and hasattr(target_date, "month")
-        and hasattr(target_date, "day")
-    ):
-        parsed_date = (
-            target_date.date() if isinstance(target_date, datetime) else target_date
-        )
+    elif hasattr(target_date, "year") and hasattr(target_date, "month") and hasattr(target_date, "day"):
+        parsed_date = target_date.date() if isinstance(target_date, datetime) else target_date
 
     if parsed_date:
         shift_date = parsed_date
     else:
-        # If before 4:00 AM, the shift belongs to the previous calendar day starting at 18:00
-        if now_local.time() < time(4, 0, 0):
+        # Rollover happens at 18:00 (6:00 PM).
+        # Before 18:00 (afternoon, morning, or early hours), show the shift that started yesterday at 18:00.
+        if now_local.time() < time(18, 0, 0):
             shift_date = now_local.date() - timedelta(days=1)
         else:
             shift_date = now_local.date()
@@ -67,6 +64,7 @@ def get_dashboard_stats(
     """
     Selector to aggregate dashboard statistics:
     - total_orders_today: Count of orders created during the night service shift (6:00 PM to 4:00 AM next day).
+      In daytime / afternoon, reflects the night service that started yesterday at 18:00.
     - total_revenue_today: Sum of revenue from non-cancelled orders created during the night service shift.
     - total_revenue: Total sum of revenue (excluding CANCELLED orders).
     - total_profit: Total profit calculated from revenue minus product cost price (excluding CANCELLED orders).
@@ -83,9 +81,10 @@ def get_dashboard_stats(
     today_orders_qs = order_qs.filter(created_at__gte=start_dt, created_at__lte=end_dt)
     total_orders_today = today_orders_qs.count()
 
-    today_revenue_aggregate = today_orders_qs.exclude(
-        status=Order.OrderStatus.CANCELLED
-    ).aggregate(total=Sum("total_amount"))
+    today_revenue_aggregate = (
+        today_orders_qs.exclude(status=Order.OrderStatus.CANCELLED)
+        .aggregate(total=Sum("total_amount"))
+    )
     total_revenue_today = round(float(today_revenue_aggregate["total"] or 0.0), 2)
 
     revenue_aggregate = order_qs.exclude(status=Order.OrderStatus.CANCELLED).aggregate(
