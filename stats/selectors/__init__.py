@@ -5,6 +5,10 @@ from stats.selectors.best_seller_selector import (
 )
 from stats.selectors.order_analytics_selector import get_order_analytics
 from stats.selectors.peak_hours_selector import get_peak_order_hours
+from stats.selectors.revenue_breakdown_selector import (
+    get_drink_or_liquor_q,
+    get_revenue_breakdown_stats,
+)
 from stats.selectors.sales_stats_selector import get_daily_sales_stats
 from stats.selectors.stats_selector import (
     get_dashboard_stats,
@@ -20,4 +24,6 @@ __all__ = [
     "get_best_sellers_stats",
     "get_peak_order_hours",
     "get_order_analytics",
+    "get_revenue_breakdown_stats",
+    "get_drink_or_liquor_q",
 ]

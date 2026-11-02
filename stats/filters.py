@@ -91,3 +91,24 @@ class PeakHoursFilter(SalesStatsFilter):
             )
         return parent_qs
 
+
+class RevenueBreakdownFilter(django_filters.FilterSet):
+    """
+    FilterSet for Revenue Breakdown API:
+    Allows filtering by start_date and end_date only.
+    """
+
+    start_date = django_filters.DateFilter(
+        field_name="created_at__date",
+        lookup_expr="gte",
+        help_text="Filter sales starting from date (YYYY-MM-DD).",
+    )
+    end_date = django_filters.DateFilter(
+        field_name="created_at__date",
+        lookup_expr="lte",
+        help_text="Filter sales up to date (YYYY-MM-DD).",
+    )
+
+    class Meta:
+        model = Order
+        fields = ["start_date", "end_date"]
