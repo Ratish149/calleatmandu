@@ -29,12 +29,14 @@ from stats.serializers import (
 class DashboardStatsAPIView(GenericAPIView):
     """
     API View to retrieve dashboard summary statistics:
-    - total_orders_today
-    - total_revenue_today
+    - total_orders_today (calculated for night service: 6:00 PM to 4:00 AM next day)
+    - total_revenue_today (calculated for night service: 6:00 PM to 4:00 AM next day)
     - total_revenue
     - total_profit
-    - total_products
     - total_orders
+    - shift_start
+    - shift_end
+    Supports optional `date` query parameter (YYYY-MM-DD) to query a specific night service shift.
     """
 
     permission_classes = [IsStaffOrOperationalRole]
@@ -42,9 +44,22 @@ class DashboardStatsAPIView(GenericAPIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        branch_id = getattr(user, "branch_id", None)
+        branch_id = None
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+        ):
+            branch_id = getattr(user, "branch_id", None)
+        elif request.query_params.get("branch"):
+            branch_param = request.query_params.get("branch")
+            if branch_param and str(branch_param).isdigit():
+                branch_id = int(branch_param)
 
-        stats_data = get_dashboard_stats(branch_id=branch_id)
+        target_date = request.query_params.get("date")
+
+        stats_data = get_dashboard_stats(branch_id=branch_id, target_date=target_date)
         serializer = self.get_serializer(stats_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -154,7 +169,7 @@ class PeakOrderHoursAPIView(GenericAPIView):
 class OrderAnalyticsAPIView(GenericAPIView):
     """
     API View to retrieve order analytics:
-    - Order volume: count and revenue of orders today, this week, this month, and total.
+    - Order volume: count and revenue of orders today (night service shift), this week, this month, and total.
     - Order type data: breakdown by order type (Delivery, Dine-in, Takeaway, POS, etc.)
       including order count, revenue, cost price from OrderItems, gross profit, and margin.
     - Overall summary metrics.

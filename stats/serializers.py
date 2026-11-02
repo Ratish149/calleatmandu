@@ -9,6 +9,14 @@ class DashboardStatsSerializer(serializers.Serializer):
     total_revenue = serializers.FloatField()
     total_profit = serializers.FloatField()
     total_orders = serializers.IntegerField()
+    shift_start = serializers.DateTimeField(
+        required=False,
+        help_text="Start timestamp of the night service shift (6:00 PM).",
+    )
+    shift_end = serializers.DateTimeField(
+        required=False,
+        help_text="End timestamp of the night service shift (4:00 AM next day).",
+    )
 
 
 class DailySalesItemSerializer(serializers.Serializer):
@@ -62,11 +70,15 @@ class PeakHourItemSerializer(serializers.Serializer):
 
 
 class OrderVolumeSerializer(serializers.Serializer):
-    today = serializers.IntegerField(help_text="Number of orders today.")
+    today = serializers.IntegerField(
+        help_text="Number of orders in the night service shift (6:00 PM to 4:00 AM)."
+    )
     this_week = serializers.IntegerField(help_text="Number of orders this week.")
     this_month = serializers.IntegerField(help_text="Number of orders this month.")
     total = serializers.IntegerField(help_text="Total number of orders.")
-    revenue_today = serializers.FloatField(help_text="Total revenue today.")
+    revenue_today = serializers.FloatField(
+        help_text="Total revenue in the night service shift (6:00 PM to 4:00 AM)."
+    )
     revenue_this_week = serializers.FloatField(help_text="Total revenue this week.")
     revenue_this_month = serializers.FloatField(help_text="Total revenue this month.")
     total_revenue = serializers.FloatField(help_text="Total revenue overall.")
@@ -94,3 +106,4 @@ class OrderAnalyticsSummarySerializer(serializers.Serializer):
 class OrderAnalyticsSerializer(serializers.Serializer):
     order_volume = OrderVolumeSerializer()
     by_order_type = OrderTypeBreakdownItemSerializer(many=True)
+    summary = OrderAnalyticsSummarySerializer()
