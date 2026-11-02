@@ -1,11 +1,23 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
-from rest_framework.generics import GenericAPIView
+from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.generics import (
+    GenericAPIView,
+    ListCreateAPIView,
+    RetrieveUpdateDestroyAPIView,
+)
 from rest_framework.response import Response
 
+from common.permissions import IsStaffOrOperationalRole
 from common.utils import CustomPagination
-from customer.filters import CustomerOrderActivityFilter
+from customer.filters import (
+    CustomerFollowUpFilter,
+    CustomerOrderActivityFilter,
+)
+from customer.models import CustomerFollowUp
 from customer.selectors.customer_activity_selector import CustomerOrderActivitySelector
 from customer.serializers import (
+    CustomerFollowUpSerializer,
     CustomerOrderActivitySerializer,
     GroupedCustomerOrderActivitySerializer,
 )
@@ -21,6 +33,7 @@ class CustomerOrderActivityListAPIView(GenericAPIView):
     - Inactive: Customer who placed an order previously but has not ordered within the window.
     - Clean separation of registered customer accounts (User) and phone-based guest customers.
     - Supports query parameters:
+      - `is_active` or `active`: boolean (true: active, false: inactive)
       - `status`: 'active' or 'inactive'
       - `customer_type`: 'registered', 'guest', or 'all'
       - `start_date`: e.g., '2026-10-01'
@@ -34,7 +47,7 @@ class CustomerOrderActivityListAPIView(GenericAPIView):
 
     queryset = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
     serializer_class = CustomerOrderActivitySerializer
-    # permission_classes = [IsStaffOrOperationalRole]
+    permission_classes = [IsStaffOrOperationalRole]
     pagination_class = CustomPagination
     filterset_class = CustomerOrderActivityFilter
 
@@ -144,3 +157,61 @@ class CustomerOrderActivityListAPIView(GenericAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CustomerFollowUpListCreateAPIView(ListCreateAPIView):
+    """
+    API view to list customer follow-up records or create a new follow-up.
+    - Filterable by phone_number, branch, created_by, date range.
+    - Optimized with select_related on 'user', 'created_by', and 'branch'.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CustomerFollowUpSerializer
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = CustomerFollowUpFilter
+    search_fields = ["phone_number", "customer_name", "notes"]
+    ordering_fields = ["created_at", "updated_at"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = CustomerFollowUp.objects.select_related(
+            "user", "created_by", "branch"
+        ).all()
+        user = self.request.user
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+            and getattr(user, "branch_id", None)
+        ):
+            queryset = queryset.filter(branch_id=user.branch_id)
+
+        phone_number = self.kwargs.get("phone_number")
+        if phone_number:
+            from customer.services.customer_followup_service import (
+                CustomerFollowUpService,
+            )
+
+            clean_phone = CustomerFollowUpService.clean_phone_number(phone_number)
+            queryset = queryset.filter(phone_number=clean_phone)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)
+
+
+class CustomerFollowUpRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, update, partial update, or delete a customer follow-up record.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CustomerFollowUpSerializer
+    queryset = CustomerFollowUp.objects.select_related(
+        "user", "created_by", "branch"
+    ).all()

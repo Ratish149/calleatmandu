@@ -1,5 +1,7 @@
+from django.db.models import Q
 from django_filters import rest_framework as filters
 
+from customer.models import CustomerFollowUp
 from order.models import Order
 
 
@@ -76,3 +78,43 @@ class CustomerOrderActivityFilter(filters.FilterSet):
             "is_reorder",
             "grouped",
         ]
+
+
+class CustomerFollowUpFilter(filters.FilterSet):
+    """
+    FilterSet for customer follow-up records:
+    - phone_number: search/filter by customer phone number.
+    - branch: filter by branch ID.
+    - created_by: filter by staff user ID.
+    - start_date / end_date: filter by creation datetime.
+    - search: search across phone_number, customer_name, notes, created_by username.
+    """
+
+    phone_number = filters.CharFilter(lookup_expr="icontains")
+    branch = filters.NumberFilter(field_name="branch_id")
+    created_by = filters.NumberFilter(field_name="created_by_id")
+    start_date = filters.DateTimeFilter(field_name="created_at", lookup_expr="gte")
+    end_date = filters.DateTimeFilter(field_name="created_at", lookup_expr="lte")
+    search = filters.CharFilter(method="filter_search")
+
+    class Meta:
+        model = CustomerFollowUp
+        fields = [
+            "phone_number",
+            "branch",
+            "created_by",
+            "start_date",
+            "end_date",
+            "search",
+        ]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        val = str(value).strip()
+        return queryset.filter(
+            Q(phone_number__icontains=val)
+            | Q(customer_name__icontains=val)
+            | Q(notes__icontains=val)
+            | Q(created_by__username__icontains=val)
+        )

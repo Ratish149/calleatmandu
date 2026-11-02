@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from customer.models import CustomerFollowUp
+
 
 class CustomerOrderActivitySerializer(serializers.Serializer):
     """
@@ -9,7 +11,11 @@ class CustomerOrderActivitySerializer(serializers.Serializer):
     id = serializers.CharField(
         help_text="Unique composite customer identifier (e.g., 'user-1' or 'guest-9801451245')."
     )
-
+    customer_id = serializers.IntegerField(
+        allow_null=True,
+        required=False,
+        help_text="User ID if customer is registered, else null for guest checkout.",
+    )
     customer_name = serializers.CharField(
         allow_blank=True,
         help_text="Customer display name extracted from orders or user profile.",
@@ -113,3 +119,66 @@ class GroupedCustomerOrderActivitySerializer(serializers.Serializer):
     summary = CustomerActivitySummarySerializer()
     active_customers = CustomerOrderActivitySerializer(many=True)
     inactive_customers = CustomerOrderActivitySerializer(many=True)
+
+
+class CustomerFollowUpSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating, updating, and viewing customer follow-up records.
+    Normalizes phone numbers and links customer identity.
+    """
+
+    user_username = serializers.CharField(
+        source="user.username", read_only=True
+    )
+    created_by_username = serializers.CharField(
+        source="created_by.username", read_only=True
+    )
+    branch_name = serializers.CharField(
+        source="branch.name", read_only=True
+    )
+
+    class Meta:
+        model = CustomerFollowUp
+        fields = [
+            "id",
+            "phone_number",
+            "customer_name",
+            "user",
+            "user_username",
+            "notes",
+            "branch",
+            "branch_name",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_phone_number(self, value):
+        from customer.services.customer_followup_service import (
+            CustomerFollowUpService,
+        )
+
+        return CustomerFollowUpService.clean_phone_number(value)
+
+    def create(self, validated_data):
+        from customer.services.customer_followup_service import (
+            CustomerFollowUpService,
+        )
+
+        request = self.context.get("request")
+        created_by = (
+            getattr(request, "user", None)
+            if request and request.user.is_authenticated
+            else None
+        )
+        return CustomerFollowUpService.create_follow_up(
+            validated_data, created_by=created_by
+        )
