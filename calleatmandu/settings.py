@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "tracking",
     "message",
     "delivery",
+    "customer",
 ]
 
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
