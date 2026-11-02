@@ -253,6 +253,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         new_status = serializer.validated_data.get("status")
+        old_status = serializer.instance.status
         comment = self.request.data.get("comment") or self.request.data.get(
             "status_comment"
         )
@@ -263,6 +264,22 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             raise serializers.ValidationError({
                 "comment": "A comment/reason is required when cancelling an order."
             })
+
+        # Stock management when transitioning to/from CANCELLED
+        if (
+            new_status
+            and old_status == Order.OrderStatus.CANCELLED
+            and new_status != Order.OrderStatus.CANCELLED
+        ):
+            try:
+                OrderService.deduct_order_stock(serializer.instance)
+            except ValueError as e:
+                raise serializers.ValidationError({"status": str(e)})
+        elif (
+            new_status == Order.OrderStatus.CANCELLED
+            and old_status != Order.OrderStatus.CANCELLED
+        ):
+            OrderService.restore_order_stock(serializer.instance)
 
         if comment:
             serializer.instance._status_change_comment = comment
@@ -445,7 +462,24 @@ class PublicOrderUpdateAPIView(GenericAPIView):
             order._status_change_comment = comment
 
         if "status" in validated_data:
-            order.status = validated_data["status"]
+            target_status = validated_data["status"]
+            old_status = order.status
+            if (
+                target_status == Order.OrderStatus.CANCELLED
+                and old_status != Order.OrderStatus.CANCELLED
+            ):
+                OrderService.restore_order_stock(order)
+            elif (
+                old_status == Order.OrderStatus.CANCELLED
+                and target_status != Order.OrderStatus.CANCELLED
+            ):
+                try:
+                    OrderService.deduct_order_stock(order)
+                except ValueError as e:
+                    return Response(
+                        {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                    )
+            order.status = target_status
 
         order.save()
 
@@ -574,5 +608,3 @@ class OrderConfigAPIView(RetrieveUpdateAPIView):
         config = OrderConfigService.toggle_take_order()
         serializer = self.get_serializer(config)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-

@@ -53,6 +53,7 @@ class Product(BaseModel):
         VEG = "VEG", "Veg"
         NON_VEG = "NON_VEG", "Non-Veg"
         DRINK = "DRINK", "Drink"
+        LIQUOR = "LIQUOR", "Liquor"
 
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True, blank=True, null=True)
@@ -81,6 +82,33 @@ class Product(BaseModel):
     meta_title = models.CharField(max_length=255, null=True, blank=True)
     meta_description = models.TextField(null=True, blank=True)
     take_order = models.BooleanField(default=True)
+
+    @property
+    def is_drink_or_liquor(self) -> bool:
+        if self.type in (self.ProductType.DRINK, self.ProductType.LIQUOR):
+            return True
+        keywords = (
+            "drink",
+            "liquor",
+            "beverage",
+            "alcohol",
+            "wine",
+            "beer",
+            "whiskey",
+            "whisky",
+            "vodka",
+            "rum",
+            "gin",
+            "bar",
+        )
+        cat_name = (getattr(self.category, "name", "") or "").lower()
+        cat_slug = (getattr(self.category, "slug", "") or "").lower()
+        sub_name = (getattr(self.sub_category, "name", "") or "").lower()
+        sub_slug = (getattr(self.sub_category, "slug", "") or "").lower()
+        return any(
+            kw in cat_name or kw in cat_slug or kw in sub_name or kw in sub_slug
+            for kw in keywords
+        )
 
     def __str__(self):
         return self.name

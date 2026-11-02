@@ -106,6 +106,49 @@ def capture_model_pre_save_snapshot(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=Order)
+def handle_order_stock_on_status_change(
+    sender, instance: Order, created: bool, **kwargs
+):
+    """
+    Restores stock for drink and liquor items when an order is CANCELLED.
+    If a CANCELLED order is transitioned back to an active state, re-deducts the stock.
+    Idempotent via internal instance flags.
+    """
+    if created:
+        return
+
+    snapshot = getattr(instance, "_pre_save_snapshot", None)
+    if not snapshot:
+        return
+
+    old_status = snapshot.get("status")
+    new_status = instance.status
+
+    if old_status == new_status:
+        return
+
+    from order.services.order_service import OrderService
+
+    if (
+        new_status == Order.OrderStatus.CANCELLED
+        and old_status != Order.OrderStatus.CANCELLED
+    ):
+        OrderService.restore_order_stock(instance)
+    elif (
+        old_status == Order.OrderStatus.CANCELLED
+        and new_status != Order.OrderStatus.CANCELLED
+    ):
+        try:
+            OrderService.deduct_order_stock(instance)
+        except ValueError as exc:
+            logger.warning(
+                "Could not deduct stock when un-cancelling order %s: %s",
+                instance.order_number,
+                exc,
+            )
+
+
+@receiver(post_save, sender=Order)
 def handle_order_activity_post_save(sender, instance: Order, created: bool, **kwargs):
     if getattr(instance, "_skip_activity_log", False):
         return
