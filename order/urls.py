@@ -8,6 +8,7 @@ from order.views import (
     OrderActivityLogListAPIView,
     OrderConfigAPIView,
     OrderListCreateAPIView,
+    OrderPhoneExportAPIView,
     OrderRetrieveUpdateDestroyAPIView,
     OrderStatusUpdateAPIView,
     POSOrderListCreateAPIView,
@@ -17,6 +18,11 @@ from order.views import (
 
 urlpatterns = [
     path("orders/config/", OrderConfigAPIView.as_view(), name="order-config"),
+    path(
+        "orders/export-phone-numbers/",
+        OrderPhoneExportAPIView.as_view(),
+        name="order-export-phone-numbers",
+    ),
     path("orders/", OrderListCreateAPIView.as_view(), name="order-list-create"),
     path(
         "orders/recent/",

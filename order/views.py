@@ -1,3 +1,5 @@
+from django.http import HttpResponse
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -13,7 +15,11 @@ from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from account.models import User
-from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
+from common.permissions import (
+    ALLOWED_STAFF_ROLES,
+    IsAdminRole,
+    IsStaffOrOperationalRole,
+)
 from common.utils import CustomPagination
 from order.filters import ActivityLogFilter, OrderFilter
 from order.models import Order
@@ -36,6 +42,7 @@ from order.serializers import (
     PublicOrderUpdateSerializer,
 )
 from order.services.order_config_service import OrderConfigService
+from order.services.order_export_service import OrderExportService
 from order.services.order_service import OrderService
 
 
@@ -608,3 +615,53 @@ class OrderConfigAPIView(RetrieveUpdateAPIView):
         config = OrderConfigService.toggle_take_order()
         serializer = self.get_serializer(config)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class OrderPhoneExportAPIView(GenericAPIView):
+    """
+    API view to export phone numbers from Orders into an Excel spreadsheet (.xlsx).
+    - Access restricted strictly to users with role 'admin' (or superusers).
+    - Single column with header 'phone'.
+    - Only includes valid 10-digit phone numbers (stripping +977 or 977 country code prefixes).
+    - Filterable by start_date and end_date (e.g., ?start_date=2026-10-01&end_date=2026-10-31).
+    - Optional query parameter `distinct` (boolean, default: true) to deduplicate phone numbers.
+    """
+
+    permission_classes = [IsAdminRole]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = OrderFilter
+
+    def get_queryset(self):
+        user = self.request.user
+        if not (user and user.is_authenticated):
+            return Order.objects.none()
+
+        if user.is_superuser or getattr(user, "role", None) == "admin":
+            return Order.objects.exclude(phone_number__isnull=True).exclude(
+                phone_number=""
+            )
+
+        return Order.objects.none()
+
+    def get(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        distinct_param = request.query_params.get("distinct", "true").lower()
+        distinct = distinct_param not in ("false", "0", "no")
+
+        phone_numbers = OrderExportService.get_order_phone_numbers(
+            queryset=queryset, distinct=distinct
+        )
+
+        excel_file = OrderExportService.generate_phone_numbers_excel(phone_numbers)
+
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"order_phones_{timestamp}.xlsx"
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = len(excel_file.getvalue())
+        return response

@@ -48,6 +48,8 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 ujson==5.13.0
 urllib3==2.7.0
+openpyxl==3.1.5
+et_xmlfile==2.0.0
 whitenoise==6.9.0
 zernio-sdk==1.4.847
 zope.interface==8.6

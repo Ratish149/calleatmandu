@@ -1,6 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
-from common.permissions import IsOrderStaff, IsStaffOrOperationalRole
+from common.permissions import IsAdminRole, IsOrderStaff, IsStaffOrOperationalRole
 
 
 class IsStaffOrReadOnly(BasePermission):
@@ -19,5 +19,10 @@ class IsStaffOrReadOnly(BasePermission):
         )
 
 
-__all__ = ["IsOrderStaff", "IsStaffOrOperationalRole", "IsStaffOrReadOnly"]
+__all__ = [
+    "IsAdminRole",
+    "IsOrderStaff",
+    "IsStaffOrOperationalRole",
+    "IsStaffOrReadOnly",
+]
 
