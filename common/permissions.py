@@ -1,6 +1,8 @@
 from rest_framework.permissions import BasePermission
 
-ALLOWED_STAFF_ROLES = {"admin", "reception", "rider", "kitchen", "staff"}
+ALLOWED_STAFF_ROLES = (
+    {"admin", "reception", "rider", "kitchen", "staff", "accountant"},
+)
 
 
 class IsStaffOrOperationalRole(BasePermission):
