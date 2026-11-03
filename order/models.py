@@ -362,6 +362,7 @@ class ActivityLog(BaseModel):
         CATEGORY = "CATEGORY", "Category"
         USER = "USER", "User"
         SETTING = "SETTING", "Setting"
+        CASH_EXPENDITURE = "CASH_EXPENDITURE", "Cash & Expenditure"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

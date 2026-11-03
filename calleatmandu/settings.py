@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "message",
     "delivery",
     "customer",
+    "accounting",
 ]
 
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
@@ -102,7 +103,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://immunology-contacted-align-barely.trycloudflare.com",
+    "https://dans-vital-sequences-short.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -110,7 +111,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://immunology-contacted-align-barely.trycloudflare.com",
+    "https://dans-vital-sequences-short.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 

@@ -37,6 +37,7 @@ urlpatterns = (
         path("api/", include("message.urls")),
         path("api/", include("delivery.urls")),
         path("api/", include("customer.urls")),
+        path("api/", include("accounting.urls")),
     ]
     + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

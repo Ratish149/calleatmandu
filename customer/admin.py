@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from customer.models import CustomerFollowUp
 
 
 @admin.register(CustomerFollowUp)
-class CustomerFollowUpAdmin(admin.ModelAdmin):
+class CustomerFollowUpAdmin(ModelAdmin):
     list_display = (
         "phone_number",
         "customer_name",
