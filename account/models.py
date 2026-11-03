@@ -15,6 +15,7 @@ class User(AbstractUser):
         ("kitchen", "Kitchen"),
         ("customer", "Customer"),
         ("staff", "Staff"),
+        ("accountant", "Accountant"),
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="customer")
     phone_number = models.CharField(max_length=20, blank=True, null=True)
