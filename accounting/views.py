@@ -101,10 +101,16 @@ class CashExpenditureRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
 class CashBalanceSummaryAPIView(GenericAPIView):
     """
-    Dedicated API view to retrieve total cash, total expenditure, and available balance:
-    - total_cash_amount: Total cash added/inflow.
-    - total_expenditure_amount: Total expenditure/outflow.
-    - total_available_balance: Available balance (cash - expenditure).
+    Dedicated API view to retrieve comprehensive cash flow balance summary:
+    - total_cash_in: Total physical cash inflow (CASH_IN).
+    - total_online_in: Total digital/online inflow (ONLINE_IN).
+    - total_cash_amount: Total inflow (total_cash_in + total_online_in).
+    - total_expenditure_amount: Total expenditure/outflow (EXPENDITURE).
+    - cash_expenditure_amount: Expenditures paid via cash.
+    - online_expenditure_amount: Expenditures paid via online/digital channels.
+    - total_available_balance: Net available balance (total_cash_amount - total_expenditure_amount).
+    - available_cash_balance: Net available physical cash (total_cash_in - cash_expenditure_amount).
+    - available_online_balance: Net available online balance (total_online_in - online_expenditure_amount).
     Filters:
     - start_date (YYYY-MM-DD)
     - end_date (YYYY-MM-DD)

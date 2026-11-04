@@ -8,7 +8,7 @@ class CashExpenditureFilter(django_filters.FilterSet):
     """
     FilterSet for Cash & Expenditure records:
     - start_date / end_date: filter by transaction date range.
-    - entry_type: filter by CASH_IN, EXPENDITURE, or BOTH.
+    - entry_type: filter by CASH_IN, ONLINE_IN, or EXPENDITURE.
     - payment_method: filter by PaymentMethod choices.
     - branch: filter by branch ID.
     - created_by: filter by staff user ID.
@@ -27,7 +27,7 @@ class CashExpenditureFilter(django_filters.FilterSet):
     )
     entry_type = django_filters.ChoiceFilter(
         choices=CashExpenditure.EntryType.choices,
-        help_text="Filter by entry type (CASH_IN, EXPENDITURE, BOTH).",
+        help_text="Filter by entry type (CASH_IN, ONLINE_IN, EXPENDITURE).",
     )
     payment_method = django_filters.ChoiceFilter(
         choices=CashExpenditure.PaymentMethod.choices,

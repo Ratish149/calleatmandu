@@ -20,9 +20,19 @@ class CashExpenditureService:
     ) -> CashExpenditure:
         """
         Creates a new Cash & Expenditure record.
+        - CASH_IN: Requires positive cash_amount (physical cash inflow).
+        - ONLINE_IN: Requires positive cash_amount (online/digital inflow).
+        - EXPENDITURE: Requires positive expenditure_amount (outflow).
         Branch is automatically resolved from the logged-in user's assigned branch.
         An ActivityLog entry is created after successful save.
         """
+        entry_type = data.get("entry_type", CashExpenditure.EntryType.EXPENDITURE)
+        valid_entry_types = [choice[0] for choice in CashExpenditure.EntryType.choices]
+        if entry_type not in valid_entry_types:
+            raise ValidationError(
+                {"entry_type": f"Invalid entry_type. Must be one of: {', '.join(valid_entry_types)}"}
+            )
+
         cash_amount = float(data.get("cash_amount", 0.0) or 0.0)
         expenditure_amount = float(data.get("expenditure_amount", 0.0) or 0.0)
 
@@ -33,21 +43,27 @@ class CashExpenditureService:
                 {"expenditure_amount": "Expenditure amount cannot be negative."}
             )
 
-        if cash_amount == 0 and expenditure_amount == 0:
-            raise ValidationError(
-                {
-                    "non_field_errors": [
-                        "Please provide either a cash_amount (Cash In) or an expenditure_amount (Expense)."
-                    ]
-                }
-            )
+        # Enforce consistency based on entry_type
+        if entry_type in (
+            CashExpenditure.EntryType.CASH_IN,
+            CashExpenditure.EntryType.ONLINE_IN,
+        ):
+            if cash_amount <= 0:
+                raise ValidationError(
+                    {"cash_amount": f"Please provide a valid cash_amount greater than zero for {entry_type}."}
+                )
+            expenditure_amount = 0.0
+        elif entry_type == CashExpenditure.EntryType.EXPENDITURE:
+            if expenditure_amount <= 0:
+                raise ValidationError(
+                    {"expenditure_amount": "Please provide a valid expenditure_amount greater than zero for EXPENDITURE."}
+                )
+            cash_amount = 0.0
 
         # Always resolve branch from the logged-in user
         branch = None
         if created_by and hasattr(created_by, "branch") and created_by.branch:
             branch = created_by.branch
-
-        entry_type = data.get("entry_type", CashExpenditure.EntryType.EXPENDITURE)
 
         entry = CashExpenditure.objects.create(
             title=data.get("title"),
@@ -65,15 +81,16 @@ class CashExpenditureService:
         )
 
         # Build human-readable description
-        parts = []
-        if cash_amount > 0:
-            parts.append(f"Cash In: Rs. {cash_amount}")
-        if expenditure_amount > 0:
-            parts.append(f"Expenditure: Rs. {expenditure_amount}")
+        if entry.entry_type == CashExpenditure.EntryType.EXPENDITURE:
+            amount_str = f"Expenditure: Rs. {expenditure_amount}"
+        elif entry.entry_type == CashExpenditure.EntryType.ONLINE_IN:
+            amount_str = f"Online In: Rs. {cash_amount}"
+        else:
+            amount_str = f"Cash In: Rs. {cash_amount}"
+
         description = (
             f"New {entry.get_entry_type_display()} entry '{entry.title}' recorded. "
-            + ", ".join(parts)
-            + f". Net: Rs. {entry.net_amount}."
+            f"{amount_str} via {entry.get_payment_method_display()}. Net: Rs. {entry.net_amount}."
         )
 
         ActivityLogService.log_activity(
@@ -119,6 +136,13 @@ class CashExpenditureService:
             "notes": instance.notes,
         }
 
+        entry_type = data.get("entry_type", instance.entry_type)
+        valid_entry_types = [choice[0] for choice in CashExpenditure.EntryType.choices]
+        if entry_type not in valid_entry_types:
+            raise ValidationError(
+                {"entry_type": f"Invalid entry_type. Must be one of: {', '.join(valid_entry_types)}"}
+            )
+
         cash_amount = float(data.get("cash_amount", instance.cash_amount) or 0.0)
         expenditure_amount = float(
             data.get("expenditure_amount", instance.expenditure_amount) or 0.0
@@ -131,21 +155,27 @@ class CashExpenditureService:
                 {"expenditure_amount": "Expenditure amount cannot be negative."}
             )
 
-        if cash_amount == 0 and expenditure_amount == 0:
-            raise ValidationError(
-                {
-                    "non_field_errors": [
-                        "Please provide either a cash_amount (Cash In) or an expenditure_amount (Expense)."
-                    ]
-                }
-            )
+        # Enforce consistency based on entry_type
+        if entry_type in (
+            CashExpenditure.EntryType.CASH_IN,
+            CashExpenditure.EntryType.ONLINE_IN,
+        ):
+            if cash_amount <= 0:
+                raise ValidationError(
+                    {"cash_amount": f"Please provide a valid cash_amount greater than zero for {entry_type}."}
+                )
+            expenditure_amount = 0.0
+        elif entry_type == CashExpenditure.EntryType.EXPENDITURE:
+            if expenditure_amount <= 0:
+                raise ValidationError(
+                    {"expenditure_amount": "Please provide a valid expenditure_amount greater than zero for EXPENDITURE."}
+                )
+            cash_amount = 0.0
 
         # Apply updates
         updatable_fields = [
             "title",
             "entry_type",
-            "cash_amount",
-            "expenditure_amount",
             "date",
             "payment_method",
             "notes",
@@ -155,6 +185,7 @@ class CashExpenditureService:
             if field in data:
                 setattr(instance, field, data[field])
 
+        instance.entry_type = entry_type
         instance.cash_amount = cash_amount
         instance.expenditure_amount = expenditure_amount
         instance.save()

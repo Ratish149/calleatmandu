@@ -8,11 +8,21 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
     """
     Serializer for recording, updating, and viewing Cash & Expenditure records.
     Branch is automatically assigned from the logged-in user — not required in payload.
+    Supports EntryTypes:
+      - CASH_IN: Physical cash additions (requires cash_amount > 0).
+      - ONLINE_IN: Digital receipts / inflows (requires cash_amount > 0).
+      - EXPENDITURE: Outflows / expenses (requires expenditure_amount > 0).
     """
 
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True
+    )
+    entry_type_display = serializers.CharField(
+        source="get_entry_type_display", read_only=True
+    )
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display", read_only=True
     )
     net_amount = serializers.FloatField(read_only=True)
 
@@ -22,11 +32,13 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "entry_type",
+            "entry_type_display",
             "cash_amount",
             "expenditure_amount",
             "net_amount",
             "date",
             "payment_method",
+            "payment_method_display",
             "notes",
             "receipt_image",
             "branch",
@@ -39,6 +51,8 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "net_amount",
+            "entry_type_display",
+            "payment_method_display",
             "branch",
             "branch_name",
             "created_by",
@@ -48,11 +62,20 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        cash_amount = attrs.get(
-            "cash_amount", getattr(self.instance, "cash_amount", 0.0)
+        entry_type = attrs.get(
+            "entry_type",
+            getattr(self.instance, "entry_type", CashExpenditure.EntryType.EXPENDITURE),
         )
-        expenditure_amount = attrs.get(
-            "expenditure_amount", getattr(self.instance, "expenditure_amount", 0.0)
+        cash_amount = float(
+            attrs.get("cash_amount", getattr(self.instance, "cash_amount", 0.0))
+            or 0.0
+        )
+        expenditure_amount = float(
+            attrs.get(
+                "expenditure_amount",
+                getattr(self.instance, "expenditure_amount", 0.0),
+            )
+            or 0.0
         )
 
         if cash_amount < 0:
@@ -64,10 +87,27 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
                 {"expenditure_amount": "Expenditure amount cannot be negative."}
             )
 
-        if cash_amount == 0 and expenditure_amount == 0:
-            raise serializers.ValidationError(
-                "Please enter a valid cash_amount (Cash In) or expenditure_amount (Expense)."
-            )
+        if entry_type in (
+            CashExpenditure.EntryType.CASH_IN,
+            CashExpenditure.EntryType.ONLINE_IN,
+        ):
+            if cash_amount <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "cash_amount": f"cash_amount must be greater than zero for {entry_type}."
+                    }
+                )
+            attrs["cash_amount"] = cash_amount
+            attrs["expenditure_amount"] = 0.0
+        elif entry_type == CashExpenditure.EntryType.EXPENDITURE:
+            if expenditure_amount <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "expenditure_amount": "expenditure_amount must be greater than zero for EXPENDITURE."
+                    }
+                )
+            attrs["expenditure_amount"] = expenditure_amount
+            attrs["cash_amount"] = 0.0
 
         return attrs
 
@@ -86,27 +126,49 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
 
 class CashBalanceSummarySerializer(serializers.Serializer):
     """
-    Serializer representing the balance summary:
-    Total cash added, total expenditure spent, and current available balance.
+    Serializer representing the comprehensive balance summary:
+    Total cash in, total online in, total expenditure, cash vs online expenses,
+    and net available balances.
     """
 
+    total_cash_in = serializers.FloatField(
+        help_text="Sum of all physical cash additions (CASH_IN)."
+    )
+    total_online_in = serializers.FloatField(
+        help_text="Sum of all digital/online additions (ONLINE_IN)."
+    )
     total_cash_amount = serializers.FloatField(
-        help_text="Sum of all cash additions and deposits."
+        help_text="Total inflow across physical cash and online (total_cash_in + total_online_in)."
     )
     total_expenditure_amount = serializers.FloatField(
         help_text="Sum of all expenditures and expenses."
     )
+    cash_expenditure_amount = serializers.FloatField(
+        help_text="Total expenditures paid via physical cash."
+    )
+    online_expenditure_amount = serializers.FloatField(
+        help_text="Total expenditures paid via online/digital methods."
+    )
     total_available_balance = serializers.FloatField(
-        help_text="Total available cash balance (total_cash_amount - total_expenditure_amount)."
+        help_text="Net available balance across cash and online (total_cash_amount - total_expenditure_amount)."
+    )
+    available_cash_balance = serializers.FloatField(
+        help_text="Available physical cash balance (total_cash_in - cash_expenditure_amount)."
+    )
+    available_online_balance = serializers.FloatField(
+        help_text="Available online balance (total_online_in - online_expenditure_amount)."
     )
     total_entries = serializers.IntegerField(
         help_text="Total number of transaction records."
     )
     cash_in_entries_count = serializers.IntegerField(
-        help_text="Count of entries with cash additions."
+        help_text="Count of entries with physical cash additions (CASH_IN)."
+    )
+    online_in_entries_count = serializers.IntegerField(
+        help_text="Count of entries with digital/online additions (ONLINE_IN)."
     )
     expenditure_entries_count = serializers.IntegerField(
-        help_text="Count of entries with expenditures."
+        help_text="Count of entries with expenditures (EXPENDITURE)."
     )
     start_date = serializers.CharField(
         allow_null=True,
@@ -118,6 +180,7 @@ class CashBalanceSummarySerializer(serializers.Serializer):
         required=False,
         help_text="End date filter applied (YYYY-MM-DD).",
     )
+
 
 
 from accounting.models import Vendor, VendorTransaction
