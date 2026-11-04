@@ -4,6 +4,7 @@ from customer.views import (
     CustomerFollowUpListCreateAPIView,
     CustomerFollowUpRetrieveUpdateDestroyAPIView,
     CustomerOrderActivityListAPIView,
+    CustomerOrderActivityPhoneExportExcelAPIView,
 )
 
 urlpatterns = [
@@ -11,6 +12,11 @@ urlpatterns = [
         "customers/order-activity/",
         CustomerOrderActivityListAPIView.as_view(),
         name="customer-order-activity",
+    ),
+    path(
+        "customers/order-activity/export-phones/",
+        CustomerOrderActivityPhoneExportExcelAPIView.as_view(),
+        name="customer-order-activity-export-phones",
     ),
     path(
         "customers/follow-ups/",

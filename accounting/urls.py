@@ -4,9 +4,16 @@ from accounting.views import (
     CashBalanceSummaryAPIView,
     CashExpenditureListCreateAPIView,
     CashExpenditureRetrieveUpdateDestroyAPIView,
+    VendorListCreateAPIView,
+    VendorRetrieveUpdateDestroyAPIView,
+    VendorSummaryAPIView,
+    VendorTransactionListCreateAPIView,
+    VendorTransactionRetrieveUpdateDestroyAPIView,
+    VendorTransactionSummaryAPIView,
 )
 
 urlpatterns = [
+    # --- Cash Flow ---
     path(
         "accounting/cash-flow/",
         CashExpenditureListCreateAPIView.as_view(),
@@ -21,5 +28,37 @@ urlpatterns = [
         "accounting/balance/",
         CashBalanceSummaryAPIView.as_view(),
         name="accounting-balance-summary",
+    ),
+    # --- Vendors ---
+    path(
+        "accounting/vendors/",
+        VendorListCreateAPIView.as_view(),
+        name="vendor-list-create",
+    ),
+    path(
+        "accounting/vendors/<int:pk>/",
+        VendorRetrieveUpdateDestroyAPIView.as_view(),
+        name="vendor-detail",
+    ),
+    path(
+        "accounting/vendor-summary/",
+        VendorSummaryAPIView.as_view(),
+        name="vendor-summary",
+    ),
+    # --- Vendor Transactions ---
+    path(
+        "accounting/vendor-transactions/",
+        VendorTransactionListCreateAPIView.as_view(),
+        name="vendor-transaction-list-create",
+    ),
+    path(
+        "accounting/vendor-transactions/summary/",
+        VendorTransactionSummaryAPIView.as_view(),
+        name="vendor-transaction-summary",
+    ),
+    path(
+        "accounting/vendor-transactions/<int:pk>/",
+        VendorTransactionRetrieveUpdateDestroyAPIView.as_view(),
+        name="vendor-transaction-detail",
     ),
 ]

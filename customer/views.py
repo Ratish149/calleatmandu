@@ -1,3 +1,5 @@
+from django.http import HttpResponse
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -7,6 +9,7 @@ from rest_framework.generics import (
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from common.permissions import IsStaffOrOperationalRole
 from common.utils import CustomPagination
@@ -21,6 +24,7 @@ from customer.serializers import (
     CustomerOrderActivitySerializer,
     GroupedCustomerOrderActivitySerializer,
 )
+from customer.services.customer_export_service import CustomerExportService
 from order.models import Order
 
 
@@ -215,3 +219,108 @@ class CustomerFollowUpRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView)
     queryset = CustomerFollowUp.objects.select_related(
         "user", "created_by", "branch"
     ).all()
+
+
+class CustomerOrderActivityPhoneExportExcelAPIView(APIView):
+    """
+    API view to download an Excel sheet with only a 'phone' column containing
+    customer phone numbers based on CustomerOrderActivityFilter parameters:
+    - Default window: 7 days (or custom start_date, end_date, days).
+    - Supports `is_active` or `active` query param (true: active, false: inactive).
+    - Supports `status` query param ('active' or 'inactive').
+    - Respects branch restrictions for branch managers / branch staff.
+    - Preserves distinct and valid 10-digit phone numbers.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+
+    def get(self, request, *args, **kwargs):
+        params = request.query_params
+
+        days_param = params.get("days", 7)
+        try:
+            days = int(days_param)
+        except (ValueError, TypeError):
+            days = 7
+
+        start_date = params.get("start_date")
+        end_date = params.get("end_date")
+        status_filter = params.get("status")
+        customer_type = params.get("customer_type")
+        search = params.get("search")
+
+        # Parse is_active / active boolean parameter
+        is_active_param = params.get("is_active")
+        if is_active_param is None:
+            is_active_param = params.get("active")
+        is_active = None
+        if is_active_param is not None:
+            val = str(is_active_param).strip().lower()
+            if val in ("true", "1", "yes", "active"):
+                is_active = True
+            elif val in ("false", "0", "no", "inactive"):
+                is_active = False
+
+        if is_active is None and status_filter:
+            st = str(status_filter).strip().lower()
+            if st in ("active", "true", "1", "yes"):
+                is_active = True
+            elif st in ("inactive", "false", "0", "no"):
+                is_active = False
+
+        branch_param = params.get("branch")
+        branch_id = (
+            int(branch_param) if branch_param and str(branch_param).isdigit() else None
+        )
+
+        is_reorder_param = params.get("is_reorder")
+        is_reorder = None
+        if is_reorder_param is not None:
+            is_reorder = str(is_reorder_param).lower() in ("true", "1", "yes")
+
+        # Query customers from selector with flexible is_active / status filtering
+        data = CustomerOrderActivitySelector.get_customer_order_activity(
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+            status=status_filter,
+            is_active=is_active,
+            customer_type=customer_type,
+            search=search,
+            is_reorder=is_reorder,
+            branch_id=branch_id,
+            user=request.user,
+        )
+
+        customers = data.get("customers", [])
+
+        # Extract unique cleaned phone numbers from matched customers
+        seen_phones = set()
+        phone_numbers = []
+        for c in customers:
+            raw_phone = c.get("phone_number")
+            cleaned = CustomerExportService.clean_phone_number(raw_phone)
+            if cleaned and cleaned not in seen_phones:
+                seen_phones.add(cleaned)
+                phone_numbers.append(cleaned)
+
+        # File naming according to active/inactive status
+        status_label = "all"
+        if is_active is True:
+            status_label = "active"
+        elif is_active is False:
+            status_label = "inactive"
+
+        excel_buffer = CustomerExportService.generate_phone_numbers_excel(
+            phone_numbers,
+            sheet_title=f"{status_label.title()} Customers",
+        )
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{status_label}_customers_phones_{timestamp}.xlsx"
+
+        response = HttpResponse(
+            excel_buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
