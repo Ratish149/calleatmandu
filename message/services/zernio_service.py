@@ -34,7 +34,7 @@ class ZernioService:
             kwargs["redirect_url"] = redirect_url
         if headless is not None:
             kwargs["headless"] = headless
-        if login_method:
+        if login_method and platform.lower().startswith("instagram"):
             kwargs["login_method"] = login_method
         if onboarding:
             kwargs["onboarding"] = onboarding

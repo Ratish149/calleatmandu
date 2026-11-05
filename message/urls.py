@@ -8,7 +8,9 @@ from message.views import (
     ConversationListAPIView,
     ConversationMarkReadAPIView,
     ConversationMessagesAPIView,
+    ConversationOrderSettingsAPIView,
     ConversationResumeAIAPIView,
+    ConversationTakeoverAIAPIView,
     ConversationUnlinkAPIView,
     OAuthCallbackAPIView,
     ZernioConnectAPIView,
@@ -40,7 +42,17 @@ urlpatterns = [
     path(
         "conversations/<str:conversation_id>/ai/resume/",
         ConversationResumeAIAPIView.as_view(),
-        name="conversation-resume-ai",
+        name="conversation-ai-resume",
+    ),
+    path(
+        "conversations/<str:conversation_id>/ai/takeover/",
+        ConversationTakeoverAIAPIView.as_view(),
+        name="conversation-ai-takeover",
+    ),
+    path(
+        "conversations/<str:conversation_id>/ai/order-settings/",
+        ConversationOrderSettingsAPIView.as_view(),
+        name="conversation-ai-order-settings",
     ),
     path(
         "conversations/<str:conversation_id>/link/",

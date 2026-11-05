@@ -76,31 +76,67 @@ ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
 APP_URL = os.getenv("APP_URL", "")
 
 # Ollama (cloud) AI auto-reply configuration
+# Model note: the old default "gpt-oss:20b" is an English-centric reasoning model
+# and drifts into corrupted/formal romanized Nepali (Devanagari leakage, pronoun
+# drift, awkward literal translation). "gemma4:31b" is verified to produce
+# natural, colloquial romanized Nepali across the representative intents, so it
+# is the default here. It is larger, so expect higher latency and cost.
+# Alternatives on Ollama Cloud: "mistral-large-4", "glm-5.3". Switch by setting
+# the OLLAMA_MODEL environment variable; no code change is required.
 OLLAMA_KEY = os.getenv("OLLAMA_KEY", "")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b")
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+# Generation sampling. A moderately low temperature keeps the reply grounded in
+# tool data (fewer fabricated words/facts) while top_p adds natural phrasing.
+OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+OLLAMA_TOP_P = float(os.getenv("OLLAMA_TOP_P", "0.9"))
+AI_REPLY_SIGNATURE = os.getenv("AI_REPLY_SIGNATURE", "- Calleatmandu bot")
 AI_REPLY_ENABLED = os.getenv("AI_REPLY_ENABLED", "true").lower() == "true"
 AI_MAX_TOOL_CALLS = int(os.getenv("AI_MAX_TOOL_CALLS", "5"))
 AI_HISTORY_MESSAGES = int(os.getenv("AI_HISTORY_MESSAGES", "20"))
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+AI_REPLY_LANGUAGE_DETECT = os.getenv("AI_REPLY_LANGUAGE_DETECT", "true").lower() == "true"
+# Allow the AI assistant to create real orders from customer chats. Disabled by
+# default; flip via the environment to instantly turn the capability off (the
+# create_order tool is then withheld from the model).
+AI_ORDER_CREATION_ENABLED = (
+    os.getenv("AI_ORDER_CREATION_ENABLED", "false").lower() == "true"
+)
+# Suppress accidental duplicate chat orders: reuse a recent PENDING order for the
+# same phone number + branch + order type instead of creating another one.
+AI_ORDER_DEDUP_WINDOW_MINUTES = int(os.getenv("AI_ORDER_DEDUP_WINDOW_MINUTES", "10"))
+# Allow the AI assistant to cancel a customer's own order from chat. Separate
+# switch from order creation; disabled by default. A cancellation is only allowed
+# within the window below (measured from the order's created_at) and only when the
+# order's stored phone number matches the one the customer provides.
+AI_ORDER_CANCELLATION_ENABLED = (
+    os.getenv("AI_ORDER_CANCELLATION_ENABLED", "false").lower() == "true"
+)
+AI_ORDER_CANCELLATION_WINDOW_MINUTES = int(
+    os.getenv("AI_ORDER_CANCELLATION_WINDOW_MINUTES", "10")
+)
+# Seconds the bot waits after an inbound message before answering on its own.
+# During this window a human operator can reply/take over, which cancels the
+# scheduled AI reply. Every new inbound message resets the timer.
+AI_REPLY_DELAY_SECONDS = int(os.getenv("AI_REPLY_DELAY_SECONDS", "120"))
 
 # DATABASES = {
 #     "default": {
-#         "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
-#         "NAME": os.getenv("DB_NAME", ""),
-#         "USER": os.getenv("DB_USER", ""),
-#         "PASSWORD": os.getenv("DB_PASSWORD", ""),
-#         "HOST": os.getenv("DB_HOST", ""),
-#         "PORT": os.getenv("DB_PORT", "5432"),
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": BASE_DIR / "db.sqlite3",
 #     }
 # }
+
+DATABASES = {
+    "default": {
+        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
+        "NAME": os.getenv("DB_NAME", ""),
+        "USER": os.getenv("DB_USER", ""),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", ""),
+        "PORT": os.getenv("DB_PORT", "5432"),
+    }
+}
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
@@ -182,12 +218,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "calleatmandu.wsgi.application"
 ASGI_APPLICATION = "calleatmandu.asgi.application"
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    },
-}
-
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -221,6 +251,40 @@ TIME_ZONE = "Asia/Kathmandu"
 USE_I18N = True
 
 USE_TZ = True
+
+
+# Celery + Redis configuration
+# The delayed AI replies and cross-process websocket broadcasts rely on Redis.
+# If REDIS_URL is empty we fall back to in-memory backends, which only work in
+# a single process (and no worker), so set REDIS_URL for any real deployment.
+CELERY_TASK_ALWAYS_EAGER = (
+    os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
+)
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL or "memory://")
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND", REDIS_URL or "cache+memory://"
+)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_IGNORE_RESULT = True
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
 
 
 # Static files (CSS, JavaScript, Images)

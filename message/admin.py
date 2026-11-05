@@ -3,6 +3,7 @@ from unfold.admin import ModelAdmin, TabularInline
 
 from message.models import (
     Attachment,
+    BranchAISettings,
     BusinessAccount,
     Conversation,
     Message,
@@ -36,6 +37,19 @@ class MessageInline(TabularInline):
     extra = 0
     fields = ("direction", "content", "sent_by", "is_ai_generated", "is_read", "created_at")
     readonly_fields = ("created_at",)
+
+
+@admin.register(BranchAISettings)
+class BranchAISettingsAdmin(ModelAdmin):
+    list_display = (
+        "branch",
+        "ai_order_creation_enabled",
+        "ai_order_cancellation_enabled",
+        "ai_order_cancellation_window_minutes",
+        "ai_order_dedup_window_minutes",
+        "updated_at",
+    )
+    list_filter = ("ai_order_creation_enabled", "ai_order_cancellation_enabled")
 
 
 @admin.register(Conversation)

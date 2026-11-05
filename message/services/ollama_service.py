@@ -21,6 +21,7 @@ class OllamaService:
         base_url: Optional[str] = None,
         model: Optional[str] = None,
         timeout: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
     ):
         self.api_key = api_key or getattr(settings, "OLLAMA_KEY", "")
         if not self.api_key:
@@ -30,8 +31,12 @@ class OllamaService:
         self.base_url = (
             base_url or getattr(settings, "OLLAMA_BASE_URL", "https://ollama.com")
         ).rstrip("/")
-        self.model = model or getattr(settings, "OLLAMA_MODEL", "gpt-oss:20b")
+        self.model = model or getattr(settings, "OLLAMA_MODEL", "gemma4:31b")
         self.timeout = timeout or getattr(settings, "OLLAMA_TIMEOUT_SECONDS", 60)
+        self.options = options if options is not None else {
+            "temperature": getattr(settings, "OLLAMA_TEMPERATURE", 0.7),
+            "top_p": getattr(settings, "OLLAMA_TOP_P", 0.9),
+        }
 
     def chat(
         self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None
@@ -42,6 +47,8 @@ class OllamaService:
             "messages": messages,
             "stream": False,
         }
+        if self.options:
+            payload["options"] = self.options
         if tools:
             payload["tools"] = tools
 

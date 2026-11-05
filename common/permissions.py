@@ -24,3 +24,18 @@ class IsStaffOrOperationalRole(BasePermission):
 
 # Alias for order specific naming context
 IsOrderStaff = IsStaffOrOperationalRole
+
+
+class IsAdminRole(BasePermission):
+    """Grants access only to admins (superuser, is_staff, or role='admin')."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+
+        return (
+            user.is_superuser
+            or user.is_staff
+            or getattr(user, "role", None) == "admin"
+        )

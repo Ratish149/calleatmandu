@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.permissions import IsAdminRole
 from message.selectors.messaging_selector import (
     get_conversation_messages,
     get_conversations_for_branch,
@@ -14,6 +15,7 @@ from message.selectors.messaging_selector import (
 )
 from message.serializers import (
     BusinessAccountSerializer,
+    ConversationOrderSettingsSerializer,
     ConversationSerializer,
     LinkConversationSerializer,
     MessageSerializer,
@@ -21,6 +23,7 @@ from message.serializers import (
     OAuthConnectURLQuerySerializer,
     SendMessageSerializer,
 )
+from message.services.ai_order_settings import resolve_conversation_branch_id
 from message.services.ai_reply_service import AIReplyService
 from message.services.messaging_service import MessagingService
 
@@ -167,6 +170,67 @@ class ConversationResumeAIAPIView(APIView):
             )
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ConversationTakeoverAIAPIView(APIView):
+    """POST /api/conversations/<id>/ai/takeover/ Deactivate AI auto-replies (human takeover)."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, conversation_id: str):
+        branch_id = get_branch_id_from_request(request)
+        service = MessagingService()
+        try:
+            conversation = service.assert_conversation_belongs_to_branch(
+                conversation_id, branch_id
+            )
+            AIReplyService.deactivate(conversation)
+            conversation.refresh_from_db()
+            return Response(
+                ConversationSerializer(conversation).data, status=status.HTTP_200_OK
+            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ConversationOrderSettingsAPIView(APIView):
+    """POST /api/conversations/<id>/ai/order-settings/ Update the branch's AI order capabilities."""
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, conversation_id: str):
+        branch_id = get_branch_id_from_request(request)
+        serializer = ConversationOrderSettingsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = MessagingService()
+        try:
+            conversation = service.assert_conversation_belongs_to_branch(
+                conversation_id, branch_id
+            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        target_branch_id = resolve_conversation_branch_id(conversation)
+        if target_branch_id is None:
+            return Response(
+                {"error": "This conversation is not linked to a branch."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from message.models import BranchAISettings
+
+        branch_settings, _ = BranchAISettings.objects.get_or_create(
+            branch_id=target_branch_id
+        )
+        for field, value in serializer.validated_data.items():
+            setattr(branch_settings, field, value)
+        branch_settings.save()
+
+        conversation.refresh_from_db()
+        return Response(
+            ConversationSerializer(conversation).data, status=status.HTTP_200_OK
+        )
 
 
 class ConversationLinkAPIView(APIView):

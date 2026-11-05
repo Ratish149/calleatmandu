@@ -22,6 +22,33 @@ logger = logging.getLogger(__name__)
 
 OAUTH_NONCE_TTL_MINUTES = 15
 
+_MEDIA_PLACEHOLDERS = {
+    "image": "[Image]",
+    "photo": "[Image]",
+    "video": "[Video]",
+    "audio": "[Audio]",
+    "voice": "[Audio]",
+    "sticker": "[Sticker]",
+    "emoji": "[Sticker]",
+    "share": "[Shared post]",
+    "share_post": "[Shared post]",
+    "file": "[File]",
+}
+
+
+def _media_attachment_placeholder(
+    metadata: Dict[str, Any], attachments: List[Dict[str, Any]]
+) -> str:
+    candidates = [str((metadata or {}).get("tiktokMessageType") or "").lower()]
+    if attachments:
+        candidates.append(str(attachments[0].get("type") or "").lower())
+
+    for candidate in candidates:
+        if candidate in _MEDIA_PLACEHOLDERS:
+            return _MEDIA_PLACEHOLDERS[candidate]
+
+    return "[Attachment]"
+
 
 class MessagingService:
     """Core messaging service handling business account linking, OAuth nonce verification,
@@ -301,36 +328,49 @@ class MessagingService:
             logger.debug(f"Ignoring non-messaging webhook event: {event}")
             return payload
 
-        zernio_conv_id = data.get("conversation", {}).get("id") or data.get(
-            "message", {}
-        ).get("conversationId")
+        account = data.get("account") or {}
+        conversation = data.get("conversation") or {}
+        message = data.get("message") or {}
+        sender = message.get("sender") or {}
+        customer = data.get("customer") or {}
+        metadata = data.get("metadata") or {}
+
+        zernio_conv_id = conversation.get("id") or message.get("conversationId")
         account_id = (
-            data.get("account", {}).get("id")
-            or data.get("conversation", {}).get("accountId")
+            account.get("accountId")
+            or account.get("id")
+            or conversation.get("accountId")
             or data.get("accountId")
         )
-        platform = data.get("account", {}).get("platform") or data.get(
-            "conversation", {}
-        ).get("platform")
+        platform = (
+            message.get("platform")
+            or account.get("platform")
+            or conversation.get("platform")
+        )
 
         participant_name = (
-            data.get("conversation", {}).get("participantName")
-            or data.get("customer", {}).get("name")
-            or data.get("message", {}).get("sender", {}).get("name")
+            conversation.get("participantName")
+            or conversation.get("participantUsername")
+            or customer.get("name")
+            or sender.get("name")
+            or sender.get("username")
         )
-        participant_avatar = data.get("customer", {}).get("avatarUrl") or data.get(
-            "message", {}
-        ).get("sender", {}).get("avatarUrl")
+        participant_avatar = (
+            conversation.get("participantPicture")
+            or customer.get("avatarUrl")
+            or sender.get("picture")
+            or sender.get("avatarUrl")
+        )
 
-        raw_attachments = data.get("message", {}).get("attachments", [])
-        message_id = data.get("message", {}).get("id")
-        content = data.get("message", {}).get("text") or data.get("message", {}).get(
-            "content"
-        )
+        raw_attachments = message.get("attachments") or []
+        message_id = message.get("id")
+        content = message.get("text") or message.get("content")
+        if not str(content or "").strip() and raw_attachments:
+            content = _media_attachment_placeholder(metadata, raw_attachments)
         sender_id = (
-            data.get("message", {}).get("sender", {}).get("id")
-            or data.get("message", {}).get("senderId")
-            or data.get("customer", {}).get("id")
+            sender.get("id")
+            or message.get("senderId")
+            or customer.get("id")
         )
 
         if not zernio_conv_id:
@@ -351,7 +391,15 @@ class MessagingService:
             else None
         )
 
-        branch = biz_account.branch if biz_account else None
+        if not biz_account:
+            logger.warning(
+                "Ignoring webhook for unconnected business account %s (conversation %s)",
+                account_id,
+                zernio_conv_id,
+            )
+            return payload
+
+        branch = biz_account.branch
 
         conversation, created = Conversation.objects.update_or_create(
             zernio_conversation_id=zernio_conv_id,

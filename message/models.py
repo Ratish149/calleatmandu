@@ -78,6 +78,9 @@ class Conversation(BaseModel):
 
     ai_reply_pending = models.BooleanField(default=False, db_index=True)
     ai_replies_active = models.BooleanField(default=True)
+    ai_reply_task_id = models.CharField(
+        max_length=255, blank=True, null=True, db_index=True
+    )
 
     class Meta:
         db_table = "conversations"
@@ -158,6 +161,35 @@ class Attachment(models.Model):
 
     def __str__(self):
         return f"Attachment {self.id} ({self.type})"
+
+
+class BranchAISettings(BaseModel):
+    """Per-branch overrides for the AI order capabilities.
+
+    Each field is nullable; a ``None`` value means "inherit the environment
+    default" defined in ``settings``. A row is only created when a branch
+    explicitly overrides a value from the UI.
+    """
+
+    branch = models.OneToOneField(
+        "user_account.Branch",
+        on_delete=models.CASCADE,
+        related_name="ai_settings",
+    )
+    ai_order_creation_enabled = models.BooleanField(null=True, blank=True)
+    ai_order_cancellation_enabled = models.BooleanField(null=True, blank=True)
+    ai_order_cancellation_window_minutes = models.PositiveIntegerField(
+        null=True, blank=True
+    )
+    ai_order_dedup_window_minutes = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "branch_ai_settings"
+        verbose_name = "branch AI settings"
+        verbose_name_plural = "branch AI settings"
+
+    def __str__(self):
+        return f"BranchAISettings - Branch {self.branch_id}"
 
 
 class Post(BaseModel):

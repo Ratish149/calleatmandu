@@ -1,12 +1,50 @@
 version: "3.9"
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: calleatmandu_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - calleatmandu_redis_data:/data
+    networks:
+      - coolify
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   web:
     build: .
     container_name: calleatmandu_web
     command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 calleatmandu.asgi:application"
+    environment:
+      # Set REDIS_URL in the environment (e.g. Coolify) to point at a managed
+      # Redis; otherwise the bundled redis service above is used.
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - calleatmandu_media_data:/app/media   # Persist media uploads
+    networks:
+      - coolify
+
+  worker:
+    build: .
+    container_name: calleatmandu_worker
+    # --pool=solo + a single concurrency keeps SQLite writer contention minimal.
+    # Switch to the default prefork pool once the project runs on Postgres.
+    command: celery -A calleatmandu worker -l info
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - calleatmandu_media_data:/app/media
     networks:
       - coolify
 
@@ -16,3 +54,4 @@ networks:
 
 volumes:
   calleatmandu_media_data:
+  calleatmandu_redis_data:

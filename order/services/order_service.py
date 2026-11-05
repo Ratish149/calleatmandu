@@ -23,9 +23,12 @@ class OrderService:
         lon = order_data.get("longitude")
         promo_code_str = order_data.get("promo_code")
 
-        # 1. Automatically find nearest active branch
-        nearest_branch = BranchAssignmentService.get_nearest_active_branch(
-            latitude=lat, longitude=lon
+        # 1. Use an explicitly supplied branch (e.g. the conversation's branch for
+        # chat-created orders) or automatically find the nearest active branch.
+        nearest_branch = order_data.get("branch") or (
+            BranchAssignmentService.get_nearest_active_branch(
+                latitude=lat, longitude=lon
+            )
         )
 
         # 2. Fetch products

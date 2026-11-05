@@ -60,6 +60,10 @@ class ConversationSerializer(serializers.ModelSerializer):
     )
     latest_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    ai_order_creation_enabled = serializers.SerializerMethodField()
+    ai_order_cancellation_enabled = serializers.SerializerMethodField()
+    ai_order_cancellation_window_minutes = serializers.SerializerMethodField()
+    ai_order_dedup_window_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -77,11 +81,27 @@ class ConversationSerializer(serializers.ModelSerializer):
             "business_account",
             "ai_replies_active",
             "ai_reply_pending",
+            "ai_order_creation_enabled",
+            "ai_order_cancellation_enabled",
+            "ai_order_cancellation_window_minutes",
+            "ai_order_dedup_window_minutes",
             "latest_message",
             "unread_count",
             "created_at",
             "updated_at",
         ]
+
+    def _order_flags(self, obj):
+        cached = getattr(obj, "_order_feature_flags_cache", None)
+        if cached is None:
+            from message.services.ai_order_settings import (
+                get_order_feature_flags,
+                resolve_conversation_branch_id,
+            )
+
+            cached = get_order_feature_flags(resolve_conversation_branch_id(obj))
+            obj._order_feature_flags_cache = cached
+        return cached
 
     def get_latest_message(self, obj):
         latest = obj.messages.order_by("-created_at").first()
@@ -91,6 +111,39 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_unread_count(self, obj):
         return obj.messages.filter(direction="INBOUND", is_read=False).count()
+
+    def get_ai_order_creation_enabled(self, obj):
+        return self._order_flags(obj).creation_enabled
+
+    def get_ai_order_cancellation_enabled(self, obj):
+        return self._order_flags(obj).cancellation_enabled
+
+    def get_ai_order_cancellation_window_minutes(self, obj):
+        return self._order_flags(obj).cancellation_window_minutes
+
+    def get_ai_order_dedup_window_minutes(self, obj):
+        return self._order_flags(obj).dedup_window_minutes
+
+
+class ConversationOrderSettingsSerializer(serializers.Serializer):
+    """Partial update for the per-branch AI order capabilities.
+
+    Only the fields provided are applied. Sending ``null`` clears an override so
+    the branch falls back to the environment default.
+    """
+
+    ai_order_creation_enabled = serializers.BooleanField(
+        required=False, allow_null=True
+    )
+    ai_order_cancellation_enabled = serializers.BooleanField(
+        required=False, allow_null=True
+    )
+    ai_order_cancellation_window_minutes = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0
+    )
+    ai_order_dedup_window_minutes = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0
+    )
 
 
 class SendMessageSerializer(serializers.Serializer):
