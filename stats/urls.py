@@ -5,6 +5,7 @@ from stats.views import (
     DashboardStatsAPIView,
     OrderAnalyticsAPIView,
     PeakOrderHoursAPIView,
+    RevenueBreakdownAPIView,
     SalesStatsAPIView,
 )
 
@@ -25,5 +26,10 @@ urlpatterns = [
         "stats/order-analytics/",
         OrderAnalyticsAPIView.as_view(),
         name="order-analytics",
+    ),
+    path(
+        "stats/revenue-breakdown/",
+        RevenueBreakdownAPIView.as_view(),
+        name="revenue-breakdown",
     ),
 ]

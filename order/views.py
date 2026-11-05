@@ -1,3 +1,5 @@
+from django.http import HttpResponse
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -6,31 +8,41 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView,
     ListCreateAPIView,
+    RetrieveUpdateAPIView,
     RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from account.models import User
-from common.permissions import ALLOWED_STAFF_ROLES, IsStaffOrOperationalRole
+from common.permissions import (
+    ALLOWED_STAFF_ROLES,
+    IsAdminRole,
+    IsStaffOrOperationalRole,
+)
 from common.utils import CustomPagination
 from order.filters import ActivityLogFilter, OrderFilter
 from order.models import Order
+from order.permissions import IsStaffOrReadOnly
 from order.selectors import (
     get_activity_logs_queryset,
     get_customer_orders_queryset,
     get_order_activity_logs_queryset,
+    get_order_config,
     get_orders_for_user_queryset,
 )
 from order.serializers import (
     ActivityLogSerializer,
     AssignRiderSerializer,
+    OrderConfigSerializer,
     OrderCreateSerializer,
     OrderResponseSerializer,
     OrderStatusUpdateSerializer,
     POSOrderCreateSerializer,
     PublicOrderUpdateSerializer,
 )
+from order.services.order_config_service import OrderConfigService
+from order.services.order_export_service import OrderExportService
 from order.services.order_service import OrderService
 
 
@@ -248,6 +260,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         new_status = serializer.validated_data.get("status")
+        old_status = serializer.instance.status
         comment = self.request.data.get("comment") or self.request.data.get(
             "status_comment"
         )
@@ -258,6 +271,22 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             raise serializers.ValidationError({
                 "comment": "A comment/reason is required when cancelling an order."
             })
+
+        # Stock management when transitioning to/from CANCELLED
+        if (
+            new_status
+            and old_status == Order.OrderStatus.CANCELLED
+            and new_status != Order.OrderStatus.CANCELLED
+        ):
+            try:
+                OrderService.deduct_order_stock(serializer.instance)
+            except ValueError as e:
+                raise serializers.ValidationError({"status": str(e)})
+        elif (
+            new_status == Order.OrderStatus.CANCELLED
+            and old_status != Order.OrderStatus.CANCELLED
+        ):
+            OrderService.restore_order_stock(serializer.instance)
 
         if comment:
             serializer.instance._status_change_comment = comment
@@ -275,6 +304,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             "special_note",
             "payment_type",
             "is_paid",
+            "discount_type",
         ]
         for field in updatable_fields:
             if field in raw:
@@ -285,6 +315,9 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
                         value = value.lower() in ("true", "1", "yes")
                     else:
                         value = bool(value)
+                elif field == "discount_type":
+                    if value not in Order.DiscountType.values:
+                        continue
                 setattr(order, field, value)
 
         # ── Handle delivery_fee / delivery_amount update ─────────────────────
@@ -330,6 +363,7 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             total_amount=order.total_amount,
             delivery_fee=order.delivery_fee,
             discount_amount=order.discount_amount,
+            discount_type=order.discount_type,
         )
 
     def update(self, request, *args, **kwargs):
@@ -435,7 +469,24 @@ class PublicOrderUpdateAPIView(GenericAPIView):
             order._status_change_comment = comment
 
         if "status" in validated_data:
-            order.status = validated_data["status"]
+            target_status = validated_data["status"]
+            old_status = order.status
+            if (
+                target_status == Order.OrderStatus.CANCELLED
+                and old_status != Order.OrderStatus.CANCELLED
+            ):
+                OrderService.restore_order_stock(order)
+            elif (
+                old_status == Order.OrderStatus.CANCELLED
+                and target_status != Order.OrderStatus.CANCELLED
+            ):
+                try:
+                    OrderService.deduct_order_stock(order)
+                except ValueError as e:
+                    return Response(
+                        {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                    )
+            order.status = target_status
 
         order.save()
 
@@ -542,3 +593,75 @@ class OrderActivityLogListAPIView(ListAPIView):
         if not order_number:
             raise NotFound("Order number is required.")
         return get_order_activity_logs_queryset(order_number)
+
+
+class OrderConfigAPIView(RetrieveUpdateAPIView):
+    """
+    Single API to manage the singleton order configuration:
+    - GET: Retrieve current configuration.
+    - POST: Toggle status (or update if value passed in body).
+    - PUT/PATCH: Update status explicitly.
+    """
+
+    serializer_class = OrderConfigSerializer
+    permission_classes = [IsStaffOrReadOnly]
+
+    def get_object(self):
+        return get_order_config()
+
+    def post(self, request, *args, **kwargs):
+        if "take_order" in request.data:
+            return self.partial_update(request, *args, **kwargs)
+        config = OrderConfigService.toggle_take_order()
+        serializer = self.get_serializer(config)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class OrderPhoneExportAPIView(GenericAPIView):
+    """
+    API view to export phone numbers from Orders into an Excel spreadsheet (.xlsx).
+    - Access restricted strictly to users with role 'admin' (or superusers).
+    - Single column with header 'phone'.
+    - Only includes valid 10-digit phone numbers (stripping +977 or 977 country code prefixes).
+    - Filterable by start_date and end_date (e.g., ?start_date=2026-10-01&end_date=2026-10-31).
+    - Optional query parameter `distinct` (boolean, default: true) to deduplicate phone numbers.
+    """
+
+    permission_classes = [IsAdminRole]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = OrderFilter
+
+    def get_queryset(self):
+        user = self.request.user
+        if not (user and user.is_authenticated):
+            return Order.objects.none()
+
+        if user.is_superuser or getattr(user, "role", None) == "admin":
+            return Order.objects.exclude(phone_number__isnull=True).exclude(
+                phone_number=""
+            )
+
+        return Order.objects.none()
+
+    def get(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        distinct_param = request.query_params.get("distinct", "true").lower()
+        distinct = distinct_param not in ("false", "0", "no")
+
+        phone_numbers = OrderExportService.get_order_phone_numbers(
+            queryset=queryset, distinct=distinct
+        )
+
+        excel_file = OrderExportService.generate_phone_numbers_excel(phone_numbers)
+
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"order_phones_{timestamp}.xlsx"
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = len(excel_file.getvalue())
+        return response

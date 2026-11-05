@@ -6,6 +6,7 @@ from account.serializers import BranchSerializer
 from order.models import (
     ActivityLog,
     Order,
+    OrderConfig,
     OrderItem,
     OrderItemExtra,
     OrderStatusHistory,
@@ -125,6 +126,11 @@ class OrderCreateSerializer(serializers.Serializer):
         required=False, allow_blank=True, allow_null=True
     )
     delivery_fee = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    discount_type = serializers.ChoiceField(
+        choices=Order.DiscountType.choices,
+        default=Order.DiscountType.AMOUNT,
+        required=False,
+    )
     discount_amount = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True)
@@ -199,6 +205,11 @@ class POSOrderCreateSerializer(serializers.Serializer):
         required=False, allow_blank=True, allow_null=True
     )
     delivery_fee = serializers.FloatField(required=False, default=0.0, min_value=0.0)
+    discount_type = serializers.ChoiceField(
+        choices=Order.DiscountType.choices,
+        default=Order.DiscountType.AMOUNT,
+        required=False,
+    )
     discount_amount = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     is_paid = serializers.BooleanField(required=False, default=False)
     items = OrderItemCreateSerializer(many=True)
@@ -240,6 +251,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "delivery_fee",
             "delivery_amount",
             "total_amount",
+            "discount_type",
             "discount_amount",
             "payment_type",
             "nps_payment_status",
@@ -333,6 +345,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "longitude",
             "special_note",
             "subtotal",
+            "discount_type",
             "discount_amount",
             "delivery_fee",
             "total_amount",
@@ -360,6 +373,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "user",
             "branch",
             "subtotal",
+            "discount_type",
             "discount_amount",
             "delivery_fee",
             "total_amount",
@@ -553,3 +567,17 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         ):
             attrs["user"] = request.user
         return attrs
+
+
+# ---------------------------------------------------------------------------
+# Order Config (Singleton)
+# ---------------------------------------------------------------------------
+
+
+class OrderConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderConfig
+        fields = ["id", "take_order"]
+        read_only_fields = ["id"]
+
+

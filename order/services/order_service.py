@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import models, transaction
 
 from notification.services.notification_service import NotificationService
 from offer.models import Offer, OfferRedemption, PromoCode
@@ -11,6 +11,172 @@ from product.models import Product, ProductExtra
 
 
 class OrderService:
+    @classmethod
+    def is_drink_or_liquor(cls, product) -> bool:
+        """
+        Determines whether a product is classified as a drink or liquor.
+        Checks:
+        1. Product type == DRINK or LIQUOR
+        2. Category name/slug containing beverage/drink/liquor keywords
+        3. Subcategory name/slug containing beverage/drink/liquor keywords
+        """
+        if not product:
+            return False
+
+        p_type = getattr(product, "type", None)
+        if p_type in (
+            Product.ProductType.DRINK,
+            getattr(Product.ProductType, "LIQUOR", "LIQUOR"),
+            "DRINK",
+            "LIQUOR",
+        ):
+            return True
+
+        keywords = (
+            "drink",
+            "liquor",
+            "beverage",
+            "alcohol",
+            "wine",
+            "beer",
+            "whiskey",
+            "whisky",
+            "vodka",
+            "rum",
+            "gin",
+            "bar",
+        )
+
+        cat = getattr(product, "category", None)
+        if cat:
+            cat_name = (getattr(cat, "name", "") or "").lower()
+            cat_slug = (getattr(cat, "slug", "") or "").lower()
+            if any(kw in cat_name or kw in cat_slug for kw in keywords):
+                return True
+
+        sub_cat = getattr(product, "sub_category", None)
+        if sub_cat:
+            sub_name = (getattr(sub_cat, "name", "") or "").lower()
+            sub_slug = (getattr(sub_cat, "slug", "") or "").lower()
+            if any(kw in sub_name or kw in sub_slug for kw in keywords):
+                return True
+
+        return False
+
+    @classmethod
+    def validate_and_deduct_stock(cls, processed_items):
+        """
+        Validates available stock for drink and liquor items and deducts stock atomically.
+        Raises ValueError if stock is insufficient.
+        """
+        product_req = {}
+        for item in processed_items:
+            product = item["product"]
+            if cls.is_drink_or_liquor(product):
+                product_req[product.id] = (
+                    product_req.get(product.id, 0) + item["quantity"]
+                )
+
+        if not product_req:
+            return
+
+        locked_products = {
+            p.id: p
+            for p in Product.objects.select_for_update().filter(id__in=product_req.keys())
+        }
+
+        for p_id, req_qty in product_req.items():
+            prod = locked_products.get(p_id)
+            if not prod:
+                raise ValueError(f"Product with ID {p_id} does not exist.")
+            if prod.stock < req_qty:
+                raise ValueError(
+                    f"Insufficient stock for '{prod.name}'. Available: {prod.stock}, requested: {req_qty}."
+                )
+
+        for p_id, req_qty in product_req.items():
+            Product.objects.filter(id=p_id).update(stock=models.F("stock") - req_qty)
+            prod = locked_products[p_id]
+            prod.stock = max(0, prod.stock - req_qty)
+
+    @classmethod
+    @transaction.atomic
+    def restore_order_stock(cls, order):
+        """
+        Restores stock for all drink and liquor items belonging to an order upon cancellation.
+        Ensures idempotency using `_stock_restored` flag on the instance.
+        """
+        if getattr(order, "_stock_restored", False):
+            return
+
+        items = (
+            order.items.select_related("product__category", "product__sub_category")
+            .all()
+        )
+        if not items:
+            return
+
+        product_returns = {}
+        for item in items:
+            product = item.product
+            if cls.is_drink_or_liquor(product):
+                product_returns[product.id] = (
+                    product_returns.get(product.id, 0) + item.quantity
+                )
+
+        if not product_returns:
+            return
+
+        for p_id, return_qty in product_returns.items():
+            Product.objects.filter(id=p_id).update(stock=models.F("stock") + return_qty)
+
+        order._stock_restored = True
+        order._stock_deducted = False
+
+    @classmethod
+    @transaction.atomic
+    def deduct_order_stock(cls, order):
+        """
+        Deducts stock for all drink and liquor items belonging to an order.
+        Used when an order that was previously cancelled is restored to an active state.
+        Ensures idempotency using `_stock_deducted` flag on the instance.
+        """
+        if getattr(order, "_stock_deducted", False):
+            return
+
+        items = (
+            order.items.select_related("product__category", "product__sub_category")
+            .all()
+        )
+        if not items:
+            return
+
+        product_req = {}
+        for item in items:
+            product = item.product
+            if cls.is_drink_or_liquor(product):
+                product_req[product.id] = product_req.get(product.id, 0) + item.quantity
+
+        if not product_req:
+            return
+
+        locked_products = {
+            p.id: p
+            for p in Product.objects.select_for_update().filter(id__in=product_req.keys())
+        }
+        for p_id, req_qty in product_req.items():
+            prod = locked_products.get(p_id)
+            if prod and prod.stock < req_qty:
+                raise ValueError(
+                    f"Insufficient stock for '{prod.name}'. Available: {prod.stock}, requested: {req_qty}."
+                )
+
+        for p_id, req_qty in product_req.items():
+            Product.objects.filter(id=p_id).update(stock=models.F("stock") - req_qty)
+
+        order._stock_deducted = True
+        order._stock_restored = False
+
     @classmethod
     @transaction.atomic
     def create_order(cls, user, order_data, cart_items_data):
@@ -33,7 +199,12 @@ class OrderService:
 
         # 2. Fetch products
         product_ids = [item["product_id"] for item in cart_items_data]
-        products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+        products_map = {
+            p.id: p
+            for p in Product.objects.select_related("category", "sub_category").filter(
+                id__in=product_ids
+            )
+        }
 
         # 3. Fetch all requested extras in one query
         all_extra_ids = [
@@ -88,6 +259,9 @@ class OrderService:
             })
 
         subtotal = round(subtotal, 2)
+
+        # Deduct stock for drink and liquor items (validates availability atomically)
+        cls.validate_and_deduct_stock(processed_items)
 
         # 5. Evaluate offer / promo code if provided
         discount_amount = 0.0
@@ -148,6 +322,19 @@ class OrderService:
             except (ValueError, TypeError):
                 pass
 
+        # Determine discount_type
+        discount_type = order_data.get("discount_type")
+        if not discount_type:
+            if offer_obj and offer_obj.offer_type == Offer.OfferType.PERCENTAGE:
+                discount_type = Order.DiscountType.PERCENTAGE
+            elif (
+                promo_code_obj
+                and promo_code_obj.promo_type == PromoCode.PromoCodeType.PERCENTAGE
+            ):
+                discount_type = Order.DiscountType.PERCENTAGE
+            else:
+                discount_type = Order.DiscountType.AMOUNT
+
         discount_amount = round(min(discount_amount, subtotal), 2)
 
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
@@ -163,6 +350,7 @@ class OrderService:
             longitude=lon,
             special_note=order_data.get("special_note", ""),
             subtotal=subtotal,
+            discount_type=discount_type,
             discount_amount=discount_amount,
             delivery_fee=delivery_fee,
             total_amount=total_amount,
@@ -264,14 +452,15 @@ class OrderService:
         )
         order._skip_activity_log = False
 
-        # 9. Trigger notification and WebSocket broadcast after transaction commit
-        order_id = order.id
-        transaction.on_commit(
-            lambda: NotificationService.send_order_notification(order)
-        )
-        transaction.on_commit(
-            lambda: OrderWebSocketService.broadcast_order_created(order_id)
-        )
+        # 9. Trigger notification and WebSocket broadcast after transaction commit (non-POS only)
+        if not order.is_pos_order:
+            order_id = order.id
+            transaction.on_commit(
+                lambda: NotificationService.send_order_notification(order)
+            )
+            transaction.on_commit(
+                lambda: OrderWebSocketService.broadcast_order_created(order_id)
+            )
 
         return order
 
@@ -286,7 +475,7 @@ class OrderService:
         - `customer_user`: Optional customer User instance to extract customer_name and phone_number.
         - `branch`: Target branch for POS order (or staff's assigned branch).
         - `is_pos_order`: Set to True automatically.
-        - `delivery_location`: Derived from payload, branch address, or "POS Counter".
+        - `delivery_location`: Optional delivery location from payload (None if not provided).
         - `latitude`, `longitude`: Optional coordinates from frontend payload (None if not provided).
         """
         # Determine customer_name and phone_number from payload or customer_user
@@ -297,30 +486,29 @@ class OrderService:
             customer_name = raw_customer_name
         elif customer_user:
             full_name = customer_user.get_full_name().strip()
-            customer_name = full_name if full_name else customer_user.username
+            username = str(getattr(customer_user, "username", "") or "").strip()
+            customer_name = full_name if full_name else (username or None)
         else:
-            customer_name = "POS Customer"
+            customer_name = None
 
         if raw_phone_number:
             phone_number = raw_phone_number
         elif customer_user:
-            phone_number = getattr(customer_user, "phone_number", "") or "N/A"
+            user_phone = str(getattr(customer_user, "phone_number", "") or "").strip()
+            phone_number = user_phone if user_phone else None
         else:
-            phone_number = "N/A"
+            phone_number = None
 
         # Determine target branch
         assigned_branch = branch
         if not assigned_branch and hasattr(created_by, "branch"):
             assigned_branch = created_by.branch
 
-        # Determine location parameters from payload, branch, or defaults
-        raw_delivery_location = str(order_data.get("delivery_location") or "").strip()
-        if raw_delivery_location:
-            delivery_location = raw_delivery_location
-        elif assigned_branch:
-            delivery_location = assigned_branch.address or "POS Counter"
-        else:
-            delivery_location = "POS Counter"
+        # Determine location parameters from payload
+        raw_delivery_location = str(
+            order_data.get("delivery_location") or order_data.get("address") or ""
+        ).strip()
+        delivery_location = raw_delivery_location if raw_delivery_location else None
 
         lat = order_data.get("latitude")
         if lat is not None and str(lat).strip() != "":
@@ -344,7 +532,12 @@ class OrderService:
 
         # Fetch products
         product_ids = [item["product_id"] for item in cart_items_data]
-        products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+        products_map = {
+            p.id: p
+            for p in Product.objects.select_related("category", "sub_category").filter(
+                id__in=product_ids
+            )
+        }
 
         # Fetch extras
         all_extra_ids = [
@@ -399,6 +592,9 @@ class OrderService:
 
         subtotal = round(subtotal, 2)
 
+        # Validate and deduct stock for drinks and liquor items
+        cls.validate_and_deduct_stock(processed_items)
+
         # Evaluate offer / promo code
         discount_amount = 0.0
         offer_obj = None
@@ -447,6 +643,19 @@ class OrderService:
             except (ValueError, TypeError):
                 pass
 
+        # Determine discount_type
+        discount_type = order_data.get("discount_type")
+        if not discount_type:
+            if offer_obj and offer_obj.offer_type == Offer.OfferType.PERCENTAGE:
+                discount_type = Order.DiscountType.PERCENTAGE
+            elif (
+                promo_code_obj
+                and promo_code_obj.promo_type == PromoCode.PromoCodeType.PERCENTAGE
+            ):
+                discount_type = Order.DiscountType.PERCENTAGE
+            else:
+                discount_type = Order.DiscountType.AMOUNT
+
         discount_amount = round(min(discount_amount, subtotal), 2)
 
         # Delivery fee from payload if provided
@@ -474,6 +683,7 @@ class OrderService:
             longitude=lon,
             special_note=order_data.get("special_note", ""),
             subtotal=subtotal,
+            discount_type=discount_type,
             discount_amount=discount_amount,
             delivery_fee=delivery_fee,
             total_amount=total_amount,
@@ -579,14 +789,16 @@ class OrderService:
         )
         order._skip_activity_log = False
 
-        # Trigger notification and WebSocket broadcast
-        order_id = order.id
-        transaction.on_commit(
-            lambda: NotificationService.send_order_notification(order)
-        )
-        transaction.on_commit(
-            lambda: OrderWebSocketService.broadcast_order_created(order_id)
-        )
+        # Note: Notification and WebSocket order_created broadcasts are skipped for POS orders
+        # (is_pos_order=True). Only non-POS (website) orders send notifications.
+        if not order.is_pos_order:
+            order_id = order.id
+            transaction.on_commit(
+                lambda: NotificationService.send_order_notification(order)
+            )
+            transaction.on_commit(
+                lambda: OrderWebSocketService.broadcast_order_created(order_id)
+            )
 
         return order
 
@@ -655,6 +867,20 @@ class OrderService:
             raise ValueError("A comment/reason is required when cancelling an order.")
 
         old_status = order.status
+
+        # If cancelling the order, restore stock for drink and liquor items
+        if (
+            new_status == Order.OrderStatus.CANCELLED
+            and old_status != Order.OrderStatus.CANCELLED
+        ):
+            cls.restore_order_stock(order)
+        # If transitioning back from CANCELLED to an active status, deduct stock again
+        elif (
+            old_status == Order.OrderStatus.CANCELLED
+            and new_status != Order.OrderStatus.CANCELLED
+        ):
+            cls.deduct_order_stock(order)
+
         order.status = new_status
         if comment:
             order._status_change_comment = comment.strip()
@@ -663,20 +889,21 @@ class OrderService:
 
         order.save()
 
-        # Trigger notification creation and WebSocket push
-        transaction.on_commit(
-            lambda: NotificationService.create_notification(
-                title=f"Order #{order.order_number} {order.get_status_display()}",
-                message=f"Order status updated to {order.get_status_display()}."
-                + (f" Reason: {comment}" if comment else ""),
-                notification_type="order_status_update",
-                data={
-                    "order_number": order.order_number,
-                    "status": order.status,
-                    "old_status": old_status,
-                },
+        # Trigger notification creation and WebSocket push (only for non-POS orders)
+        if not order.is_pos_order:
+            transaction.on_commit(
+                lambda: NotificationService.create_notification(
+                    title=f"Order #{order.order_number} {order.get_status_display()}",
+                    message=f"Order status updated to {order.get_status_display()}."
+                    + (f" Reason: {comment}" if comment else ""),
+                    notification_type="order_status_update",
+                    data={
+                        "order_number": order.order_number,
+                        "status": order.status,
+                        "old_status": old_status,
+                    },
+                )
             )
-        )
 
         return order
 
@@ -797,7 +1024,12 @@ class OrderService:
             return cls.recalculate_order_totals(order, save_order=save_order)
 
         product_ids = [item["product_id"] for item in normalised]
-        products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+        products_map = {
+            p.id: p
+            for p in Product.objects.select_related("category", "sub_category").filter(
+                id__in=product_ids
+            )
+        }
 
         # Validate all products exist
         missing = set(product_ids) - set(products_map.keys())
@@ -849,6 +1081,31 @@ class OrderService:
                     or matched_item.subtotal != item_subtotal
                 ):
                     old_qty = matched_item.quantity
+
+                    # Adjust stock for drinks and liquor if quantity changed on an active order
+                    if (
+                        order.status != Order.OrderStatus.CANCELLED
+                        and cls.is_drink_or_liquor(product)
+                    ):
+                        qty_diff = qty - old_qty
+                        if qty_diff > 0:
+                            prod_locked = (
+                                Product.objects.select_for_update()
+                                .filter(id=product.id)
+                                .first()
+                            )
+                            if prod_locked and prod_locked.stock < qty_diff:
+                                raise ValueError(
+                                    f"Insufficient stock for '{product.name}'. Available: {prod_locked.stock}, requested additional: {qty_diff}."
+                                )
+                            Product.objects.filter(id=product.id).update(
+                                stock=models.F("stock") - qty_diff
+                            )
+                        elif qty_diff < 0:
+                            Product.objects.filter(id=product.id).update(
+                                stock=models.F("stock") + abs(qty_diff)
+                            )
+
                     matched_item.quantity = qty
                     matched_item.unit_price = unit_price
                     matched_item.extras_price = item_extras_total
@@ -866,6 +1123,24 @@ class OrderService:
                         f"{product.name} (qty: {old_qty} \u2192 {qty})"
                     )
             else:
+                # Deduct stock for newly added drink or liquor item
+                if (
+                    order.status != Order.OrderStatus.CANCELLED
+                    and cls.is_drink_or_liquor(product)
+                ):
+                    prod_locked = (
+                        Product.objects.select_for_update()
+                        .filter(id=product.id)
+                        .first()
+                    )
+                    if prod_locked and prod_locked.stock < qty:
+                        raise ValueError(
+                            f"Insufficient stock for '{product.name}'. Available: {prod_locked.stock}, requested: {qty}."
+                        )
+                    Product.objects.filter(id=product.id).update(
+                        stock=models.F("stock") - qty
+                    )
+
                 # Brand new item added to the order
                 order_item = OrderItem.objects.create(
                     order=order,
@@ -892,9 +1167,16 @@ class OrderService:
                 extras_str = f" (+{', '.join(extra_names)})" if extra_names else ""
                 items_added.append(f"{qty}x {product.name}{extras_str}")
 
-        # Delete any items that were removed in the new cart
+        # Delete any items that were removed in the new cart and restore stock if active
         for remaining_list in existing_by_key.values():
             for remaining_item in remaining_list:
+                if (
+                    order.status != Order.OrderStatus.CANCELLED
+                    and cls.is_drink_or_liquor(remaining_item.product)
+                ):
+                    Product.objects.filter(id=remaining_item.product_id).update(
+                        stock=models.F("stock") + remaining_item.quantity
+                    )
                 prod_name = getattr(
                     remaining_item.product,
                     "name",

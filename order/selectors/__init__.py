@@ -3,6 +3,7 @@ from order.selectors.activity_log_selector import (
     get_entity_activity_logs_queryset,
     get_order_activity_logs_queryset,
 )
+from order.selectors.order_config_selector import get_order_config
 from order.selectors.order_selector import (
     get_customer_orders_queryset,
     get_order_by_id_with_relations,
@@ -18,5 +19,7 @@ __all__ = [
     "get_activity_logs_queryset",
     "get_order_activity_logs_queryset",
     "get_entity_activity_logs_queryset",
+    "get_order_config",
 ]
+
 

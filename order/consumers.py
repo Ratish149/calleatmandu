@@ -66,7 +66,12 @@ class OrderConsumer(AsyncJsonWebsocketConsumer):
                 or query_params.get("branch", [None])[0]
             )
 
-        if not branch_id and user and user.is_authenticated and getattr(user, "branch_id", None):
+        if (
+            not branch_id
+            and user
+            and user.is_authenticated
+            and getattr(user, "branch_id", None)
+        ):
             branch_id = str(user.branch_id)
 
         self.branch_id = str(branch_id) if branch_id else None
@@ -118,10 +123,30 @@ class OrderConsumer(AsyncJsonWebsocketConsumer):
     # Channel Layer Group Event Handlers
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _is_pos_order(event: dict) -> bool:
+        """
+        Returns True if the event payload represents a POS order (is_pos_order is True).
+        """
+        is_pos = event.get("is_pos_order")
+        if is_pos is None:
+            data = event.get("data", {})
+            if isinstance(data, dict):
+                is_pos = data.get("is_pos_order", False)
+        return bool(is_pos is True or str(is_pos).lower() == "true")
+
     async def order_created(self, event):
         """
         Dispatched when an order is created. Sends full order details to the client.
+        Only sends orders created from the website (is_pos_order is False), skipping POS orders.
         """
+        if self._is_pos_order(event):
+            logger.info(
+                "OrderConsumer: skipping order.created broadcast for POS order #%s",
+                event.get("order_number"),
+            )
+            return
+
         await self.send_json({
             "event": event.get("event", "order.created"),
             "order_number": event.get("order_number"),
@@ -133,7 +158,15 @@ class OrderConsumer(AsyncJsonWebsocketConsumer):
         """
         Dispatched when an order status changes to READY_FOR_PICKUP.
         Sends full order details to the client.
+        Only sends events for non-POS orders (is_pos_order is False).
         """
+        if self._is_pos_order(event):
+            logger.info(
+                "OrderConsumer: skipping order.ready_for_pickup broadcast for POS order #%s",
+                event.get("order_number"),
+            )
+            return
+
         await self.send_json({
             "event": event.get("event", "order.ready_for_pickup"),
             "order_number": event.get("order_number"),
@@ -144,7 +177,15 @@ class OrderConsumer(AsyncJsonWebsocketConsumer):
     async def order_status_updated(self, event):
         """
         Dispatched on generic order status transitions.
+        Only sends events for non-POS orders (is_pos_order is False).
         """
+        if self._is_pos_order(event):
+            logger.info(
+                "OrderConsumer: skipping order.status_updated broadcast for POS order #%s",
+                event.get("order_number"),
+            )
+            return
+
         await self.send_json({
             "event": event.get("event", "order.status_updated"),
             "order_number": event.get("order_number"),
@@ -166,7 +207,9 @@ class PrinterConsumer(AsyncJsonWebsocketConsumer):
     """
 
     async def connect(self):
-        self.branch_id = self.scope.get("url_route", {}).get("kwargs", {}).get("branch_id")
+        self.branch_id = (
+            self.scope.get("url_route", {}).get("kwargs", {}).get("branch_id")
+        )
         self.group_name = None
 
         if not self.branch_id:

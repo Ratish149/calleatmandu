@@ -5,13 +5,14 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from order.models import Order, OrderItem
+from stats.selectors.stats_selector import get_night_service_shift_range
 
 
 def get_order_analytics(queryset):
     """
     Selector to aggregate order analytics:
     1. order_volume:
-       - today: Total orders created today (local time).
+       - today: Total orders created during night service shift (6:00 PM to 4:00 AM next day).
        - this_week: Total orders created this week (Monday to today).
        - this_month: Total orders created this month (1st of month to today).
        - total: Total orders in queryset.
@@ -29,11 +30,12 @@ def get_order_analytics(queryset):
     month_start = today.replace(day=1)
 
     # 1. Volume Metrics
-    orders_today = queryset.filter(created_at__date=today).count()
+    # Night service shift for today (6:00 PM to 4:00 AM)
+    start_dt, end_dt = get_night_service_shift_range()
+    today_orders_qs = queryset.filter(created_at__gte=start_dt, created_at__lte=end_dt)
+    orders_today = today_orders_qs.count()
     revenue_today = float(
-        queryset
-        .filter(created_at__date=today)
-        .exclude(status=Order.OrderStatus.CANCELLED)
+        today_orders_qs.exclude(status=Order.OrderStatus.CANCELLED)
         .aggregate(r=Coalesce(Sum("total_amount"), 0.0))["r"]
     )
 
@@ -158,7 +160,7 @@ def get_order_analytics(queryset):
     sum_orders = sum(item["total_orders"] for item in by_order_type)
     sum_rev = round(sum(item["total_revenue"] for item in by_order_type), 2)
     sum_cost = round(sum(item["total_cost"] for item in by_order_type), 2)
-    sum_profit = round(sum_rev - sum_cost, 2)
+    sum_profit = round(sum(rev - cost for rev, cost in ((item["total_revenue"], item["total_cost"]) for item in by_order_type)), 2)
     sum_margin = round((sum_profit / sum_rev) * 100, 2) if sum_rev > 0 else 0.0
 
     summary = {

@@ -48,6 +48,9 @@ class UserListAPIView(ListAPIView):
     search_fields = ["first_name", "last_name", "username", "email", "phone_number"]
     pagination_class = CustomPagination
 
+    def get_queryset(self):
+        return super().get_queryset().exclude(role="customer")
+
 
 class UserRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     """

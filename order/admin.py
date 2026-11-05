@@ -4,10 +4,22 @@ from unfold.admin import ModelAdmin, TabularInline
 from order.models import (
     ActivityLog,
     Order,
+    OrderConfig,
     OrderItem,
     OrderItemExtra,
     OrderStatusHistory,
 )
+
+
+@admin.register(OrderConfig)
+class OrderConfigAdmin(ModelAdmin):
+    list_display = ["id", "take_order"]
+
+    def has_add_permission(self, request):
+        return not OrderConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class OrderItemExtraInline(TabularInline):
@@ -63,6 +75,8 @@ class OrderAdmin(ModelAdmin):
         "payment_type",
         "is_paid",
         "status",
+        "discount_type",
+        "discount_amount",
         "total_amount",
         "transaction_id",
         "barcode_number",
@@ -72,6 +86,7 @@ class OrderAdmin(ModelAdmin):
         "status",
         "order_type",
         "payment_type",
+        "discount_type",
         "is_paid",
         "branch",
         "created_at",

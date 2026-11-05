@@ -15,8 +15,10 @@ class User(AbstractUser):
         ("kitchen", "Kitchen"),
         ("customer", "Customer"),
         ("staff", "Staff"),
+        ("accountant", "Accountant"),
+        ("customer_service", "Customer Service"),
     )
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="customer")
+    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default="customer")
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     branch = models.ForeignKey(
         "Branch",

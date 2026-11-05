@@ -62,9 +62,7 @@ class NotificationService:
                         "created_at": notification.created_at.isoformat(),
                     },
                 }
-                async_to_sync(channel_layer.group_send)(
-                    "order_notifications", payload
-                )
+                async_to_sync(channel_layer.group_send)("order_notifications", payload)
                 logger.info(
                     "Broadcasted notification ID %s via WebSocket", notification.id
                 )
@@ -81,7 +79,15 @@ class NotificationService:
     def send_order_notification(cls, order) -> bool:
         """
         Broadcasts order notification over WebSocket and persists Notification record in database.
+        Only sends notifications for non-POS orders (is_pos_order is False).
         """
+        if getattr(order, "is_pos_order", False):
+            logger.info(
+                "NotificationService: skipping notification for POS order #%s",
+                getattr(order, "order_number", "N/A"),
+            )
+            return False
+
         order_data = OrderNotificationSerializer(order).data
         title = f"New Order #{order.order_number}"
         message = f"Order of Rs. {order.total_amount} placed by {order.customer_name}"
