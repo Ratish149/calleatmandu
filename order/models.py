@@ -140,6 +140,15 @@ class Order(BaseModel):
         default=False,
         db_index=True,
     )
+    is_prepaid = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Marks this order as prepaid (customer paid before delivery).",
+    )
+    prepaid_amount = models.FloatField(
+        default=0.0,
+        help_text="Amount paid in advance by the customer.",
+    )
 
     order_number = models.CharField(
         max_length=12,
@@ -193,6 +202,8 @@ class Order(BaseModel):
             models.Index(fields=["branch", "status"]),
             models.Index(fields=["latitude", "longitude"]),
             models.Index(fields=["payment_type", "is_paid"]),
+            models.Index(fields=["phone_number", "status"]),
+            models.Index(fields=["phone_number", "is_prepaid"]),
         ]
 
     def save(self, *args, **kwargs):

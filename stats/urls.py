@@ -2,6 +2,7 @@ from django.urls import path
 
 from stats.views import (
     BestSellerProductsAPIView,
+    BillPrintConfigAPIView,
     DashboardStatsAPIView,
     OrderAnalyticsAPIView,
     PeakOrderHoursAPIView,
@@ -31,5 +32,10 @@ urlpatterns = [
         "stats/revenue-breakdown/",
         RevenueBreakdownAPIView.as_view(),
         name="revenue-breakdown",
+    ),
+    path(
+        "bill-print-config/",
+        BillPrintConfigAPIView.as_view(),
+        name="bill-print-config",
     ),
 ]

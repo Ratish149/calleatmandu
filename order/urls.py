@@ -4,6 +4,7 @@ from order.views import (
     ActivityLogListCreateAPIView,
     ActivityLogRetrieveUpdateDestroyAPIView,
     AssignRiderAPIView,
+    CustomerFlagAPIView,
     CustomerOrderHistoryAPIView,
     OrderActivityLogListAPIView,
     OrderConfigAPIView,
@@ -22,6 +23,11 @@ urlpatterns = [
         "orders/export-phone-numbers/",
         OrderPhoneExportAPIView.as_view(),
         name="order-export-phone-numbers",
+    ),
+    path(
+        "orders/customer-flag/",
+        CustomerFlagAPIView.as_view(),
+        name="order-customer-flag",
     ),
     path("orders/", OrderListCreateAPIView.as_view(), name="order-list-create"),
     path(

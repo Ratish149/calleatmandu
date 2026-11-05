@@ -8,12 +8,24 @@ from rest_framework.generics import (
 )
 from rest_framework.response import Response
 
-from accounting.filters import CashExpenditureFilter
-from accounting.models import CashExpenditure
-from accounting.selectors import get_cash_balance_summary
+from accounting.filters import (
+    CashExpenditureFilter,
+    VendorFilter,
+    VendorSummaryFilter,
+    VendorTransactionFilter,
+)
+from accounting.models import CashExpenditure, Vendor, VendorTransaction
+from accounting.selectors import (
+    get_cash_balance_summary,
+    get_vendor_summary_report,
+    get_vendor_transaction_summary,
+)
 from accounting.serializers import (
     CashBalanceSummarySerializer,
     CashExpenditureSerializer,
+    VendorSerializer,
+    VendorSummaryResponseSerializer,
+    VendorTransactionSerializer,
     VendorTransactionSummarySerializer,
 )
 from common.permissions import IsStaffOrOperationalRole
@@ -24,8 +36,8 @@ class CashExpenditureListCreateAPIView(ListCreateAPIView):
     """
     API view to list cash & expenditure transactions or record a new entry:
     - GET: Returns paginated transactions with embedded balance summary
-           (total_cash_amount, total_expenditure_amount, total_available_balance).
-    - POST: Adds cash amount or records an expenditure.
+           (total_cash_amount, total_online_amount, total_delivery_charge, total_available_balance).
+    - POST: Adds a new record with cash_amount, online_amount, and delivery_charge.
     """
 
     permission_classes = [IsStaffOrOperationalRole]
@@ -33,8 +45,14 @@ class CashExpenditureListCreateAPIView(ListCreateAPIView):
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = CashExpenditureFilter
-    search_fields = ["title", "notes", "created_by__username"]
-    ordering_fields = ["date", "cash_amount", "expenditure_amount", "created_at"]
+    search_fields = ["notes", "created_by__username"]
+    ordering_fields = [
+        "date",
+        "cash_amount",
+        "online_amount",
+        "delivery_charge",
+        "created_at",
+    ]
     ordering = ["-date", "-created_at"]
 
     def get_queryset(self):
@@ -53,9 +71,26 @@ class CashExpenditureListCreateAPIView(ListCreateAPIView):
     def list(self, request, *args, **kwargs):
         filtered_qs = self.filter_queryset(self.get_queryset())
 
+        user = request.user
+        branch_id = None
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+            and getattr(user, "branch_id", None)
+        ):
+            branch_id = user.branch_id
+        elif request.query_params.get("branch"):
+            try:
+                branch_id = int(request.query_params.get("branch"))
+            except (ValueError, TypeError):
+                branch_id = None
+
         # Calculate balance summary for the filtered dataset
         summary_data = get_cash_balance_summary(
             queryset=filtered_qs,
+            branch_id=branch_id,
             start_date=request.query_params.get("start_date"),
             end_date=request.query_params.get("end_date"),
         )
@@ -102,15 +137,14 @@ class CashExpenditureRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class CashBalanceSummaryAPIView(GenericAPIView):
     """
     Dedicated API view to retrieve comprehensive cash flow balance summary:
-    - total_cash_in: Total physical cash inflow (CASH_IN).
-    - total_online_in: Total digital/online inflow (ONLINE_IN).
-    - total_cash_amount: Total inflow (total_cash_in + total_online_in).
-    - total_expenditure_amount: Total expenditure/outflow (EXPENDITURE).
-    - cash_expenditure_amount: Expenditures paid via cash.
-    - online_expenditure_amount: Expenditures paid via online/digital channels.
-    - total_available_balance: Net available balance (total_cash_amount - total_expenditure_amount).
-    - available_cash_balance: Net available physical cash (total_cash_in - cash_expenditure_amount).
-    - available_online_balance: Net available online balance (total_online_in - online_expenditure_amount).
+    - total_cash_amount: Sum of all physical cash amounts.
+    - total_online_amount: Sum of all digital/online payment amounts.
+    - total_delivery_charge: Sum of all delivery charge expenses.
+    - total_vendor_paid_amount: Sum of all payments made to vendors (vendor payment amount).
+    - vendor_payment_amount: Alias for total_vendor_paid_amount.
+    - total_available_balance: Net available balance:
+      (total_cash_amount + total_online_amount - total_delivery_charge - total_vendor_paid_amount).
+    - available_balance: Alias for total_available_balance.
     Filters:
     - start_date (YYYY-MM-DD)
     - end_date (YYYY-MM-DD)
@@ -137,30 +171,30 @@ class CashBalanceSummaryAPIView(GenericAPIView):
 
     def get(self, request, *args, **kwargs):
         filtered_qs = self.filter_queryset(self.get_queryset())
+        user = request.user
+        branch_id = None
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+            and getattr(user, "branch_id", None)
+        ):
+            branch_id = user.branch_id
+        elif request.query_params.get("branch"):
+            try:
+                branch_id = int(request.query_params.get("branch"))
+            except (ValueError, TypeError):
+                branch_id = None
+
         summary = get_cash_balance_summary(
             queryset=filtered_qs,
+            branch_id=branch_id,
             start_date=request.query_params.get("start_date"),
             end_date=request.query_params.get("end_date"),
         )
         serializer = self.get_serializer(summary)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-from accounting.filters import (
-    VendorFilter,
-    VendorSummaryFilter,
-    VendorTransactionFilter,
-)
-from accounting.models import Vendor, VendorTransaction
-from accounting.selectors import (
-    get_vendor_summary_report,
-    get_vendor_transaction_summary,
-)
-from accounting.serializers import (
-    VendorSerializer,
-    VendorSummaryResponseSerializer,
-    VendorTransactionSerializer,
-)
 
 
 class VendorListCreateAPIView(ListCreateAPIView):
@@ -230,7 +264,7 @@ class VendorTransactionListCreateAPIView(ListCreateAPIView):
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = VendorTransactionFilter
-    search_fields = ["title", "notes", "vendor__name"]
+    search_fields = ["notes", "vendor__name"]
     ordering_fields = ["date", "amount", "created_at"]
     ordering = ["-date", "-created_at"]
 

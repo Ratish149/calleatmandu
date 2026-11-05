@@ -273,11 +273,33 @@ class PrinterConsumer(AsyncJsonWebsocketConsumer):
         """
         Dispatched by OrderWebSocketService.broadcast_to_printer.
         Sends print_order payload to the connected printer agent.
+        Injects bill_print_config (bill_title, bill_footer) from BillPrintConfig
+        for this branch so the printer agent can render custom headers/footers.
         """
+        from stats.models import BillPrintConfig
+
         payload_data = event.get("data", {})
+        order_data = payload_data.get("order", {})
+
+        # Inject bill print config for this branch
+        bill_config = {}
+        try:
+            config = await BillPrintConfig.objects.filter(
+                branch_id=self.branch_id
+            ).values("bill_title", "bill_footer").afirst()
+            if config:
+                bill_config = {
+                    "bill_title": config["bill_title"] or "",
+                    "bill_footer": config["bill_footer"] or "",
+                }
+        except Exception:
+            pass
+
+        order_data["bill_print_config"] = bill_config
+
         await self.send_json({
             "type": "print_order",
             "job_id": payload_data.get("job_id"),
             "job_type": payload_data.get("job_type", "KOT"),
-            "order": payload_data.get("order", {}),
+            "order": order_data,
         })

@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.db import models
 from django.template.defaultfilters import slugify
+from django.utils import timezone
 
 from common.models import BaseModel
 
@@ -145,3 +147,161 @@ class ProductImage(BaseModel):
 
     def __str__(self):
         return f"{self.product.name} Image"
+
+
+# ---------------------------------------------------------------------------
+# Kitchen Inventory
+# ---------------------------------------------------------------------------
+
+
+class KitchenInventoryItem(BaseModel):
+    """
+    Master list of raw ingredients managed by the admin.
+
+    - total_quantity: live current stock, automatically updated whenever
+      a KitchenInventoryLog is saved or edited.
+    - benchmark_quantity: optional minimum stock level set by admin.
+      When set, is_below_benchmark flags low stock.
+    """
+
+    class Unit(models.TextChoices):
+        KG = "kg", "Kilogram (kg)"
+        GRAM = "g", "Gram (g)"
+        LITER = "ltr", "Litre (ltr)"
+        ML = "ml", "Millilitre (ml)"
+        PIECE = "pcs", "Piece (pcs)"
+        PACKET = "pkt", "Packet (pkt)"
+        BOTTLE = "btl", "Bottle (btl)"
+        BOX = "box", "Box (box)"
+
+    name = models.CharField(max_length=150, unique=True, db_index=True)
+    unit = models.CharField(max_length=10, choices=Unit.choices, default=Unit.KG)
+    total_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=0,
+        help_text=(
+            "Current quantity in stock. "
+            "Automatically updated when daily logs are submitted."
+        ),
+    )
+    benchmark_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text=(
+            "Optional. Minimum stock level set by admin. "
+            "Used to flag when stock is running low."
+        ),
+    )
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.unit})"
+
+    @property
+    def is_below_benchmark(self) -> bool:
+        """True when total_quantity is below the benchmark (if one is set)."""
+        if self.benchmark_quantity is None:
+            return False
+        return self.total_quantity < self.benchmark_quantity
+
+
+class KitchenInventoryLog(BaseModel):
+    """
+    Daily record submitted by kitchen staff.
+
+    Staff enter:
+      - received_quantity : new stock added / restocked today  (+)
+      - consumed_quantity : quantity used / consumed today      (-)
+
+    On save, KitchenInventoryItem.total_quantity is updated atomically:
+      total_quantity += received_quantity - consumed_quantity
+
+    Edits are handled correctly: the old net impact is reversed before
+    the new net impact is applied.
+    """
+
+    item = models.ForeignKey(
+        "KitchenInventoryItem",
+        on_delete=models.CASCADE,
+        related_name="daily_logs",
+        db_index=True,
+    )
+    date = models.DateField(default=timezone.localdate, db_index=True)
+
+    received_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=0,
+        help_text="New stock received / restocked today. Increases total stock.",
+    )
+    consumed_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=0,
+        help_text="Quantity used / consumed today. Decreases total stock.",
+    )
+
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_logs",
+        help_text="Kitchen staff who submitted this daily update.",
+    )
+    notes = models.TextField(
+        blank=True, null=True, help_text="Optional remarks for the day."
+    )
+
+    class Meta:
+        # Only one log per item per day
+        unique_together = [("item", "date")]
+        ordering = ["-date", "item__name"]
+        indexes = [
+            models.Index(fields=["date", "item"]),
+            models.Index(fields=["item", "-date"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+
+        with transaction.atomic():
+            if self.pk:
+                # --- Editing an existing log ---
+                # Reverse the old net impact, then apply the new one.
+                old = KitchenInventoryLog.objects.select_for_update().get(pk=self.pk)
+                old_net = old.received_quantity - old.consumed_quantity
+                new_net = self.received_quantity - self.consumed_quantity
+                delta = new_net - old_net
+            else:
+                # --- New log ---
+                delta = self.received_quantity - self.consumed_quantity
+
+            super().save(*args, **kwargs)
+
+            # Update total_quantity on the item using F() to avoid race conditions
+            KitchenInventoryItem.objects.filter(pk=self.item_id).update(
+                total_quantity=models.F("total_quantity") + delta
+            )
+
+    def __str__(self):
+        return (
+            f"{self.item.name} | {self.date} "
+            f"| +{self.received_quantity} received "
+            f"| -{self.consumed_quantity} consumed"
+        )
+
+    @property
+    def net_change(self):
+        """Positive = stock increased, Negative = stock decreased."""
+        return self.received_quantity - self.consumed_quantity
+
+    @property
+    def is_below_benchmark(self) -> bool:
+        """True when the item's total stock is below the benchmark on this log's date."""
+        return self.item.is_below_benchmark

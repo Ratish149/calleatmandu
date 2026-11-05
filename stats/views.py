@@ -1,6 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
-from rest_framework.generics import GenericAPIView
+from rest_framework.generics import GenericAPIView, RetrieveUpdateAPIView
 from rest_framework.response import Response
 
 from common.permissions import IsStaffOrOperationalRole
@@ -10,6 +10,7 @@ from stats.filters import (
     RevenueBreakdownFilter,
     SalesStatsFilter,
 )
+from stats.models import BillPrintConfig
 from stats.selectors import (
     get_best_seller_categories,
     get_best_seller_products,
@@ -24,6 +25,7 @@ from stats.serializers import (
     BestSellerCategorySerializer,
     BestSellerProductSerializer,
     BestSellerStatsSerializer,
+    BillPrintConfigSerializer,
     DailySalesItemSerializer,
     DashboardStatsSerializer,
     OrderAnalyticsSerializer,
@@ -244,4 +246,28 @@ class RevenueBreakdownAPIView(GenericAPIView):
             end_date=end_date,
         )
         serializer = self.get_serializer(stats_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class BillPrintConfigAPIView(RetrieveUpdateAPIView):
+    """
+    Singleton bill print config per branch.
+    GET: Retrieve the config for the authenticated user's branch (auto-creates if missing).
+    POST: Create or update the config for the authenticated user's branch.
+    PUT/PATCH: Update the config for the authenticated user's branch.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = BillPrintConfigSerializer
+
+    def get_object(self):
+        branch = self.request.user.branch
+        config, _ = BillPrintConfig.objects.get_or_create(branch=branch)
+        return config
+
+    def post(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)

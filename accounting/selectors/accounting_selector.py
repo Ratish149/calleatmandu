@@ -1,9 +1,9 @@
 from typing import Any, Dict, Optional
 
-from django.db.models import Count, Q, QuerySet, Sum
+from django.db.models import Count, QuerySet, Sum
 from django.db.models.functions import Coalesce
 
-from accounting.models import CashExpenditure
+from accounting.models import CashExpenditure, VendorTransaction
 
 
 def get_cash_balance_summary(
@@ -11,11 +11,13 @@ def get_cash_balance_summary(
     branch_id: Optional[int] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    vendor_transaction_queryset: Optional[QuerySet[VendorTransaction]] = None,
 ) -> Dict[str, Any]:
     """
-    Optimized selector to calculate physical cash additions, online receipts,
-    expenditures, and net available balances across cash and digital channels.
-    Executes in a single database aggregation query.
+    Optimized selector to calculate total cash amount, online amount,
+    delivery charge, vendor payment amount, and net available balance:
+    available_balance = cash_amount + online_amount - delivery_charge - vendor_payment_amount.
+    Executes database aggregation queries efficiently.
     """
     if queryset is None:
         queryset = CashExpenditure.objects.all()
@@ -30,83 +32,60 @@ def get_cash_balance_summary(
         queryset = queryset.filter(date__lte=end_date)
 
     agg = queryset.aggregate(
-        total_cash_in=Coalesce(
-            Sum(
-                "cash_amount",
-                filter=Q(entry_type=CashExpenditure.EntryType.CASH_IN),
-            ),
-            0.0,
-        ),
-        total_online_in=Coalesce(
-            Sum(
-                "cash_amount",
-                filter=Q(entry_type=CashExpenditure.EntryType.ONLINE_IN),
-            ),
-            0.0,
-        ),
-        total_expenditure=Coalesce(
-            Sum(
-                "expenditure_amount",
-                filter=Q(entry_type=CashExpenditure.EntryType.EXPENDITURE),
-            ),
-            0.0,
-        ),
-        cash_expenditure=Coalesce(
-            Sum(
-                "expenditure_amount",
-                filter=Q(
-                    entry_type=CashExpenditure.EntryType.EXPENDITURE,
-                    payment_method=CashExpenditure.PaymentMethod.CASH,
-                ),
-            ),
-            0.0,
-        ),
-        online_expenditure=Coalesce(
-            Sum(
-                "expenditure_amount",
-                filter=Q(entry_type=CashExpenditure.EntryType.EXPENDITURE)
-                & ~Q(payment_method=CashExpenditure.PaymentMethod.CASH),
-            ),
-            0.0,
-        ),
+        total_cash_amount=Coalesce(Sum("cash_amount"), 0.0),
+        total_online_amount=Coalesce(Sum("online_amount"), 0.0),
+        total_delivery_charge=Coalesce(Sum("delivery_charge"), 0.0),
         total_entries=Count("id"),
-        cash_in_count=Count(
-            "id", filter=Q(entry_type=CashExpenditure.EntryType.CASH_IN)
-        ),
-        online_in_count=Count(
-            "id", filter=Q(entry_type=CashExpenditure.EntryType.ONLINE_IN)
-        ),
-        expenditure_count=Count(
-            "id", filter=Q(entry_type=CashExpenditure.EntryType.EXPENDITURE)
-        ),
     )
 
-    total_cash_in = round(float(agg["total_cash_in"] or 0.0), 2)
-    total_online_in = round(float(agg["total_online_in"] or 0.0), 2)
-    total_inflow = round(total_cash_in + total_online_in, 2)
-    total_expenditure = round(float(agg["total_expenditure"] or 0.0), 2)
-    cash_expenditure = round(float(agg["cash_expenditure"] or 0.0), 2)
-    online_expenditure = round(float(agg["online_expenditure"] or 0.0), 2)
+    if vendor_transaction_queryset is None:
+        vendor_transaction_queryset = VendorTransaction.objects.filter(
+            transaction_type=VendorTransaction.TransactionType.PAYMENT
+        )
+        if branch_id:
+            vendor_transaction_queryset = vendor_transaction_queryset.filter(
+                branch_id=branch_id
+            )
+        if start_date:
+            vendor_transaction_queryset = vendor_transaction_queryset.filter(
+                date__gte=start_date
+            )
+        if end_date:
+            vendor_transaction_queryset = vendor_transaction_queryset.filter(
+                date__lte=end_date
+            )
+    else:
+        vendor_transaction_queryset = vendor_transaction_queryset.filter(
+            transaction_type=VendorTransaction.TransactionType.PAYMENT
+        )
 
-    total_available_balance = round(total_inflow - total_expenditure, 2)
-    available_cash_balance = round(total_cash_in - cash_expenditure, 2)
-    available_online_balance = round(total_online_in - online_expenditure, 2)
+    vendor_agg = vendor_transaction_queryset.aggregate(
+        total_vendor_paid_amount=Coalesce(Sum("amount"), 0.0)
+    )
+
+    total_cash_amount = round(float(agg["total_cash_amount"] or 0.0), 2)
+    total_online_amount = round(float(agg["total_online_amount"] or 0.0), 2)
+    total_delivery_charge = round(float(agg["total_delivery_charge"] or 0.0), 2)
+    total_vendor_paid_amount = round(
+        float(vendor_agg["total_vendor_paid_amount"] or 0.0), 2
+    )
+
+    total_available_balance = round(
+        total_cash_amount
+        + total_online_amount
+        - total_delivery_charge
+        - total_vendor_paid_amount,
+        2,
+    )
 
     return {
-        "total_cash_in": total_cash_in,
-        "total_online_in": total_online_in,
-        "total_cash_amount": total_inflow,
-        "total_expenditure_amount": total_expenditure,
-        "cash_expenditure_amount": cash_expenditure,
-        "online_expenditure_amount": online_expenditure,
+        "total_cash_amount": total_cash_amount,
+        "total_online_amount": total_online_amount,
+        "total_delivery_charge": total_delivery_charge,
+        "total_vendor_paid_amount": total_vendor_paid_amount,
         "total_available_balance": total_available_balance,
-        "available_cash_balance": available_cash_balance,
-        "available_online_balance": available_online_balance,
+        "available_balance": total_available_balance,
         "total_entries": agg["total_entries"],
-        "cash_in_entries_count": agg["cash_in_count"],
-        "online_in_entries_count": agg["online_in_count"],
-        "expenditure_entries_count": agg["expenditure_count"],
         "start_date": str(start_date) if start_date else None,
         "end_date": str(end_date) if end_date else None,
     }
-

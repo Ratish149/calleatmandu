@@ -148,7 +148,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://slightly-openings-alphabetical-shots.trycloudflare.com",
+    "https://identification-bulk-geographic-behalf.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -156,7 +156,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://slightly-openings-alphabetical-shots.trycloudflare.com",
+    "https://identification-bulk-geographic-behalf.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 

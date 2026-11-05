@@ -3,7 +3,15 @@ import json
 from rest_framework import serializers
 
 from offer.selectors import calculate_product_offer_price, get_active_offers
-from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
+from product.models import (
+    Category,
+    KitchenInventoryItem,
+    KitchenInventoryLog,
+    Product,
+    ProductExtra,
+    ProductImage,
+    Subcategory,
+)
 
 # ---------------------------------------------------------------------------
 # Category
@@ -315,3 +323,137 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             .prefetch_related("extras", "images")
             .get(pk=instance.pk)
         )
+
+
+# ---------------------------------------------------------------------------
+# Kitchen Inventory
+# ---------------------------------------------------------------------------
+
+
+class KitchenInventoryItemSerializer(serializers.ModelSerializer):
+    """
+    Read / list serializer for KitchenInventoryItem.
+    Includes a computed flag that tells the client whether stock is below benchmark.
+    """
+
+    is_below_benchmark = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = KitchenInventoryItem
+        fields = [
+            "id",
+            "name",
+            "unit",
+            "total_quantity",
+            "benchmark_quantity",
+            "is_below_benchmark",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "total_quantity", "is_below_benchmark", "created_at", "updated_at"]
+
+    def validate_benchmark_quantity(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Benchmark quantity cannot be negative.")
+        return value
+
+
+class KitchenInventoryLogSerializer(serializers.ModelSerializer):
+    """
+    Serializer for daily kitchen inventory logs submitted by kitchen staff.
+
+    Staff enter:
+      - item            : FK to the inventory item
+      - date            : defaults to today
+      - received_quantity : new stock added today  (increases total)
+      - consumed_quantity : quantity used today     (decreases total)
+      - notes           : optional remarks
+
+    Read-only extras:
+      - item_name / item_unit  : for display
+      - net_change             : received - consumed (positive = gain)
+      - updated_by_username    : who submitted this log
+    """
+
+    item_name = serializers.CharField(source="item.name", read_only=True)
+    item_unit = serializers.CharField(source="item.unit", read_only=True)
+    net_change = serializers.DecimalField(
+        max_digits=10, decimal_places=3, read_only=True
+    )
+    updated_by_username = serializers.CharField(
+        source="updated_by.username", read_only=True
+    )
+    is_below_benchmark = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = KitchenInventoryLog
+        fields = [
+            "id",
+            "item",
+            "item_name",
+            "item_unit",
+            "date",
+            "received_quantity",
+            "consumed_quantity",
+            "net_change",
+            "is_below_benchmark",
+            "notes",
+            "updated_by",
+            "updated_by_username",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "item_name",
+            "item_unit",
+            "net_change",
+            "is_below_benchmark",
+            "updated_by",
+            "updated_by_username",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_received_quantity(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Received quantity cannot be negative.")
+        return value
+
+    def validate_consumed_quantity(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Consumed quantity cannot be negative.")
+        return value
+
+    def validate(self, attrs):
+        # Warn if more is consumed than is currently in stock (optional guard)
+        item = attrs.get("item") or (self.instance.item if self.instance else None)
+        consumed = attrs.get(
+            "consumed_quantity",
+            getattr(self.instance, "consumed_quantity", 0),
+        )
+        received = attrs.get(
+            "received_quantity",
+            getattr(self.instance, "received_quantity", 0),
+        )
+        if item:
+            projected = item.total_quantity + received - consumed
+            if projected < 0:
+                raise serializers.ValidationError(
+                    {
+                        "consumed_quantity": (
+                            f"Cannot consume {consumed} {item.unit}. "
+                            f"Current stock is {item.total_quantity} {item.unit}. "
+                            f"This would result in negative stock."
+                        )
+                    }
+                )
+        return attrs
+
+    def create(self, validated_data):
+        validated_data["updated_by"] = self.context["request"].user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data["updated_by"] = self.context["request"].user
+        return super().update(instance, validated_data)

@@ -77,6 +77,11 @@ class CustomerOrderActivitySerializer(serializers.Serializer):
         choices=["active", "inactive"],
         help_text="'active' if ordered within window, 'inactive' if no orders in window.",
     )
+    latest_followup_at = serializers.DateTimeField(
+        allow_null=True,
+        required=False,
+        help_text="Timestamp of the most recent follow-up recorded for this customer. Null means never followed up.",
+    )
 
 
 class CustomerActivitySummarySerializer(serializers.Serializer):
