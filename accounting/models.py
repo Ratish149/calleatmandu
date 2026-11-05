@@ -105,10 +105,6 @@ class VendorTransaction(BaseModel):
         db_index=True,
         help_text="The vendor this transaction belongs to.",
     )
-    title = models.CharField(
-        max_length=200,
-        help_text="Short description of the transaction (e.g. 'Vegetable supply bill', 'Cash advance settlement').",
-    )
     transaction_type = models.CharField(
         max_length=10,
         choices=TransactionType.choices,
@@ -177,7 +173,7 @@ class VendorTransaction(BaseModel):
 
     def __str__(self):
         return (
-            f"{self.date} | {self.vendor.name} - {self.title} "
+            f"{self.date} | {self.vendor.name} "
             f"({self.get_transaction_type_display()}: {self.amount})"
         )
 
@@ -194,70 +190,35 @@ class VendorTransaction(BaseModel):
 
 class CashExpenditure(BaseModel):
     """
-    Model to record general cash inflows (CASH_IN), online inflows (ONLINE_IN),
-    and expenditures (EXPENDITURE / Cash Out) to accurately calculate
-    the total available cash and online balance.
-
-    Entry Types:
-        - CASH_IN    : Physical cash received/added (e.g. cash sales, cash deposited).
-        - ONLINE_IN  : Online money received (e.g. eSewa, Khalti, Bank Transfer inflow).
-        - EXPENDITURE: Money paid out for general expenses (not vendor-specific).
-
-    For vendor-specific transactions, use VendorTransaction instead.
+    Model to record cash amount, online amount, and delivery charge
+    for a given date so that available balance can be calculated:
+    available_balance = cash_amount + online_amount - delivery_charge.
     """
 
-    class EntryType(models.TextChoices):
-        CASH_IN = "CASH_IN", "Cash In / Addition"
-        ONLINE_IN = "ONLINE_IN", "Online In / Digital Receipt"
-        EXPENDITURE = "EXPENDITURE", "Expenditure / Cash Out"
-
-    class PaymentMethod(models.TextChoices):
-        CASH = "CASH", "Cash"
-        BANK_TRANSFER = "BANK_TRANSFER", "Bank Transfer"
-        ESEWA = "ESEWA", "eSewa"
-        KHALTI = "KHALTI", "Khalti"
-        CHEQUE = "CHEQUE", "Cheque"
-        OTHER = "OTHER", "Other"
-
-    title = models.CharField(
-        max_length=200,
-        help_text="Short title or description of this cash entry or expenditure.",
-    )
-    entry_type = models.CharField(
-        max_length=20,
-        choices=EntryType.choices,
-        default=EntryType.EXPENDITURE,
-        db_index=True,
-        help_text=(
-            "CASH_IN: physical cash received. "
-            "ONLINE_IN: digital/online money received. "
-            "EXPENDITURE: money paid out as a general expense."
-        ),
-    )
     cash_amount = models.FloatField(
         default=0.0,
-        help_text="Amount of cash added / received (Inflow). Used for CASH_IN and ONLINE_IN entries.",
+        db_index=True,
+        help_text="Physical cash amount received/collected.",
     )
-    expenditure_amount = models.FloatField(
+    online_amount = models.FloatField(
         default=0.0,
-        help_text="Amount spent on expenditure / expense (Outflow). Used for EXPENDITURE entries.",
+        db_index=True,
+        help_text="Online or digital amount received (eSewa, Khalti, Bank Transfer, etc.).",
+    )
+    delivery_charge = models.FloatField(
+        default=0.0,
+        db_index=True,
+        help_text="Delivery charge amount.",
     )
     date = models.DateField(
         default=timezone.now,
         db_index=True,
         help_text="Date when this transaction occurred.",
     )
-    payment_method = models.CharField(
-        max_length=30,
-        choices=PaymentMethod.choices,
-        default=PaymentMethod.CASH,
-        db_index=True,
-        help_text="Mode of payment or collection.",
-    )
     notes = models.TextField(
         blank=True,
         null=True,
-        help_text="Additional remarks or invoice reference.",
+        help_text="Additional remarks or notes.",
     )
     receipt_image = models.FileField(
         upload_to="accounting/receipts/%Y/%m/",
@@ -292,25 +253,28 @@ class CashExpenditure(BaseModel):
         indexes = [
             models.Index(fields=["date", "-created_at"]),
             models.Index(fields=["branch", "date"]),
-            models.Index(fields=["entry_type", "date"]),
         ]
 
     def __str__(self):
-        return f"{self.date} - {self.title} (+{self.cash_amount} / -{self.expenditure_amount})"
+        return (
+            f"{self.date} - Cash: {self.cash_amount}, Online: {self.online_amount}, "
+            f"Delivery: {self.delivery_charge} (Available: {self.available_balance})"
+        )
+
+    @property
+    def available_balance(self) -> float:
+        """
+        Calculates available balance:
+        cash_amount + online_amount - delivery_charge
+        """
+        return round(
+            float(self.cash_amount or 0.0)
+            + float(self.online_amount or 0.0)
+            - float(self.delivery_charge or 0.0),
+            2,
+        )
 
     @property
     def net_amount(self) -> float:
-        """
-        Net contribution of this entry to the available balance:
-          - CASH_IN    →  +cash_amount
-          - ONLINE_IN  →  +cash_amount
-          - EXPENDITURE → -expenditure_amount
-        """
-        if self.entry_type == self.EntryType.EXPENDITURE:
-            return round(-float(self.expenditure_amount), 2)
-        return round(float(self.cash_amount), 2)
-
-    @property
-    def is_online(self) -> bool:
-        """Returns True if this is an online/digital inflow entry."""
-        return self.entry_type == self.EntryType.ONLINE_IN
+        """Alias for available_balance."""
+        return self.available_balance

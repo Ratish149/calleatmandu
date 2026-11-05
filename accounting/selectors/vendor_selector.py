@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from django.db.models import Count, Q, QuerySet, Sum
 from django.db.models.functions import Coalesce
@@ -30,16 +30,26 @@ def get_vendor_transaction_summary(
 
     agg = queryset.aggregate(
         total_billed=Coalesce(
-            Sum("amount", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)),
+            Sum(
+                "amount",
+                filter=Q(transaction_type=VendorTransaction.TransactionType.BILL),
+            ),
             0.0,
         ),
         total_paid=Coalesce(
-            Sum("amount", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)),
+            Sum(
+                "amount",
+                filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT),
+            ),
             0.0,
         ),
         total_entries=Count("id"),
-        bill_count=Count("id", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)),
-        payment_count=Count("id", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)),
+        bill_count=Count(
+            "id", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)
+        ),
+        payment_count=Count(
+            "id", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)
+        ),
     )
 
     total_billed = round(float(agg["total_billed"] or 0.0), 2)
@@ -106,22 +116,31 @@ def get_vendor_summary_report(
         queryset = queryset.filter(
             Q(vendor__name__icontains=s)
             | Q(vendor__phone_number__icontains=s)
-            | Q(title__icontains=s)
             | Q(notes__icontains=s)
         )
 
     agg = queryset.aggregate(
         total_billed=Coalesce(
-            Sum("amount", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)),
+            Sum(
+                "amount",
+                filter=Q(transaction_type=VendorTransaction.TransactionType.BILL),
+            ),
             0.0,
         ),
         total_paid=Coalesce(
-            Sum("amount", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)),
+            Sum(
+                "amount",
+                filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT),
+            ),
             0.0,
         ),
         total_entries=Count("id"),
-        bill_count=Count("id", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)),
-        payment_count=Count("id", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)),
+        bill_count=Count(
+            "id", filter=Q(transaction_type=VendorTransaction.TransactionType.BILL)
+        ),
+        payment_count=Count(
+            "id", filter=Q(transaction_type=VendorTransaction.TransactionType.PAYMENT)
+        ),
         vendor_count=Count("vendor_id", distinct=True),
     )
 
@@ -142,4 +161,3 @@ def get_vendor_summary_report(
         "start_date": str(start_date) if start_date else None,
         "end_date": str(end_date) if end_date else None,
     }
-

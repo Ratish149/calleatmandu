@@ -1,6 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
-from rest_framework.filters import SearchFilter
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.generics import (
     ListAPIView,
     ListCreateAPIView,
@@ -9,12 +9,29 @@ from rest_framework.generics import (
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from common.permissions import IsAdminRole, IsStaffOrOperationalRole
 from common.utils import CustomPagination
-from product.filters import CategoryFilter, ProductFilter, SubcategoryFilter
-from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
+from product.filters import (
+    CategoryFilter,
+    KitchenInventoryItemFilter,
+    KitchenInventoryLogFilter,
+    ProductFilter,
+    SubcategoryFilter,
+)
+from product.models import (
+    Category,
+    KitchenInventoryItem,
+    KitchenInventoryLog,
+    Product,
+    ProductExtra,
+    ProductImage,
+    Subcategory,
+)
 from product.selectors import get_related_products_by_slug
 from product.serializers import (
     CategorySerializer,
+    KitchenInventoryItemSerializer,
+    KitchenInventoryLogSerializer,
     ProductCreateSerializer,
     ProductDetailSerializer,
     ProductExtraCreateSerializer,
@@ -252,3 +269,102 @@ class RelatedProductListAPIView(ListAPIView):
     def get_queryset(self):
         product_slug = self.kwargs.get("product_slug") or self.kwargs.get("slug")
         return get_related_products_by_slug(product_slug)
+
+
+# ---------------------------------------------------------------------------
+# Kitchen Inventory
+# ---------------------------------------------------------------------------
+
+
+class KitchenInventoryItemListCreateAPIView(ListCreateAPIView):
+    """
+    GET  /kitchen/inventory/items/        — Admin & kitchen staff: list all items
+    POST /kitchen/inventory/items/        — Admin only: create a new inventory item
+
+    Supports filtering by: search, unit, below_benchmark
+    Supports ordering by: name, total_quantity, benchmark_quantity, created_at
+    """
+
+    serializer_class = KitchenInventoryItemSerializer
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KitchenInventoryItemFilter
+    search_fields = ["name"]
+    ordering_fields = ["name", "total_quantity", "benchmark_quantity", "created_at"]
+    ordering = ["name"]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsStaffOrOperationalRole()]
+        return [IsAdminRole()]
+
+    def get_queryset(self):
+        return KitchenInventoryItem.objects.all()
+
+
+class KitchenInventoryItemRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    GET    /kitchen/inventory/items/<pk>/  — retrieve item detail
+    PUT    /kitchen/inventory/items/<pk>/  — admin: full update
+    PATCH  /kitchen/inventory/items/<pk>/  — admin: partial update
+    DELETE /kitchen/inventory/items/<pk>/  — admin: delete item
+    """
+
+    serializer_class = KitchenInventoryItemSerializer
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsStaffOrOperationalRole()]
+        return [IsAdminRole()]
+
+    def get_queryset(self):
+        return KitchenInventoryItem.objects.all()
+
+
+class KitchenInventoryLogListCreateAPIView(ListCreateAPIView):
+    """
+    GET  /kitchen/inventory/logs/     — List daily logs (admin sees all, kitchen sees own)
+    POST /kitchen/inventory/logs/     — Kitchen staff: submit today's consumption log
+
+    Supports filtering by: item, start_date, end_date, updated_by, search
+    Supports ordering by: date, consumed_quantity, received_quantity, created_at
+    """
+
+    serializer_class = KitchenInventoryLogSerializer
+    permission_classes = [IsStaffOrOperationalRole]
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = KitchenInventoryLogFilter
+    search_fields = ["item__name", "notes"]
+    ordering_fields = ["date", "consumed_quantity", "received_quantity", "created_at"]
+    ordering = ["-date"]
+
+    def get_queryset(self):
+        return (
+            KitchenInventoryLog.objects
+            .select_related("item", "updated_by")
+            .all()
+        )
+
+
+class KitchenInventoryLogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    GET    /kitchen/inventory/logs/<pk>/  — retrieve log detail
+    PUT    /kitchen/inventory/logs/<pk>/  — kitchen staff: full update (corrects total_quantity)
+    PATCH  /kitchen/inventory/logs/<pk>/  — kitchen staff: partial update
+    DELETE /kitchen/inventory/logs/<pk>/  — admin only: delete a log entry
+    """
+
+    serializer_class = KitchenInventoryLogSerializer
+
+    def get_permissions(self):
+        if self.request.method == "DELETE":
+            return [IsAdminRole()]
+        return [IsStaffOrOperationalRole()]
+
+    def get_queryset(self):
+        return (
+            KitchenInventoryLog.objects
+            .select_related("item", "updated_by")
+            .all()
+        )

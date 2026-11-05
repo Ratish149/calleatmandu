@@ -68,9 +68,9 @@ class VendorTransactionService:
 
         transaction_type = data.get("transaction_type")
         if not transaction_type:
-            raise ValidationError(
-                {"transaction_type": "transaction_type is required (BILL or PAYMENT)."}
-            )
+            raise ValidationError({
+                "transaction_type": "transaction_type is required (BILL or PAYMENT)."
+            })
 
         branch = None
         if created_by and hasattr(created_by, "branch") and created_by.branch:
@@ -78,7 +78,6 @@ class VendorTransactionService:
 
         transaction = VendorTransaction.objects.create(
             vendor_id=data.get("vendor") or data.get("vendor_id"),
-            title=data.get("title"),
             transaction_type=transaction_type,
             amount=amount,
             date=data.get("date"),
@@ -106,7 +105,6 @@ class VendorTransactionService:
             instance.amount = amount
 
         updatable_fields = [
-            "title",
             "transaction_type",
             "date",
             "payment_method",

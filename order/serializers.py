@@ -581,3 +581,16 @@ class OrderConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 
+# ---------------------------------------------------------------------------
+# Customer Flag (Phone Number Risk Check)
+# ---------------------------------------------------------------------------
+
+
+class CustomerFlagSerializer(serializers.Serializer):
+    flag = serializers.ChoiceField(choices=["GREEN", "RED"])
+    reason = serializers.CharField()
+    total_orders = serializers.IntegerField()
+    delivered_orders = serializers.IntegerField()
+    cancelled_orders = serializers.IntegerField()
+    prepaid_orders_after_last_cancellation = serializers.IntegerField()
+

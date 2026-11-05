@@ -7,6 +7,7 @@ from django.db.models import Count, Max, Min, Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
+from customer.models import CustomerFollowUp
 from order.models import Order
 
 User = get_user_model()
@@ -353,14 +354,46 @@ class CustomerOrderActivitySelector:
                 c for c in filtered_customers if c["is_reorder"] == is_reorder
             ]
 
-        # Sort: Active customers first, then by latest order date descending
-        filtered_customers.sort(
-            key=lambda c: (
-                c["is_active"],
-                c["last_order_date"] or timezone.now(),
-            ),
-            reverse=True,
-        )
+        # ------------------------------------------------------------------
+        # Build a lookup of latest follow-up datetime per phone number.
+        # Customers with a recent follow-up should appear at the BOTTOM so
+        # staff prioritize those who haven't been contacted yet.
+        # ------------------------------------------------------------------
+        all_phones = [
+            c["phone_number"] for c in filtered_customers if c["phone_number"]
+        ]
+        followup_latest: Dict[str, Any] = {}
+        if all_phones:
+            followup_qs = (
+                CustomerFollowUp.objects.filter(phone_number__in=all_phones)
+                .values("phone_number")
+                .annotate(latest_followup=Max("created_at"))
+            )
+            followup_latest = {
+                row["phone_number"]: row["latest_followup"] for row in followup_qs
+            }
+
+        # Inject latest_followup_at into each customer record
+        for c in filtered_customers:
+            c["latest_followup_at"] = followup_latest.get(c["phone_number"])
+
+        # Sort:
+        #   Primary   — Active customers first (is_active=True before False)
+        #   Secondary — Customers with NO recent follow-up first (None sorts before datetime)
+        #   Tertiary  — Within same follow-up bucket, newest last_order_date first
+        # Net effect: customers never contacted → top; recently followed-up → bottom
+        def _sort_key(c):
+            followup = c["latest_followup_at"]
+            # Use epoch 0 for None so nulls sort before any real datetime
+            followup_ts = followup.timestamp() if followup else 0.0
+            last_order = c["last_order_date"] or timezone.now()
+            return (
+                not c["is_active"],        # False first = active customers on top
+                followup_ts,               # 0.0 (no followup) first, latest followup last
+                -last_order.timestamp(),   # newest last_order_date first within group
+            )
+
+        filtered_customers.sort(key=_sort_key)
 
         return {
             "summary": summary,

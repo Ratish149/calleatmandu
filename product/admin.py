@@ -1,7 +1,15 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from product.models import Category, Product, ProductExtra, ProductImage, Subcategory
+from product.models import (
+    Category,
+    KitchenInventoryItem,
+    KitchenInventoryLog,
+    Product,
+    ProductExtra,
+    ProductImage,
+    Subcategory,
+)
 
 
 @admin.register(Category)
@@ -66,3 +74,65 @@ class ProductImageAdmin(ModelAdmin):
     list_display = ["product", "image", "created_at"]
     search_fields = ["product__name"]
     ordering = ["-created_at"]
+
+
+# ---------------------------------------------------------------------------
+# Kitchen Inventory Admin
+# ---------------------------------------------------------------------------
+
+
+class KitchenInventoryLogInline(TabularInline):
+    model = KitchenInventoryLog
+    extra = 0
+    readonly_fields = ["consumed_quantity", "received_quantity", "net_change", "updated_by", "date", "notes"]
+    fields = ["date", "received_quantity", "consumed_quantity", "net_change", "updated_by", "notes"]
+    ordering = ["-date"]
+    can_delete = False
+
+    def net_change(self, obj):
+        return obj.net_change
+    net_change.short_description = "Net Change"
+
+
+@admin.register(KitchenInventoryItem)
+class KitchenInventoryItemAdmin(ModelAdmin):
+    list_display = [
+        "name",
+        "unit",
+        "total_quantity",
+        "benchmark_quantity",
+        "is_below_benchmark",
+        "created_at",
+        "updated_at",
+    ]
+    list_filter = ["unit"]
+    search_fields = ["name"]
+    ordering = ["name"]
+    readonly_fields = ["total_quantity", "created_at", "updated_at"]
+    inlines = [KitchenInventoryLogInline]
+
+    @admin.display(boolean=True, description="Below Benchmark?")
+    def is_below_benchmark(self, obj):
+        return obj.is_below_benchmark
+
+
+@admin.register(KitchenInventoryLog)
+class KitchenInventoryLogAdmin(ModelAdmin):
+    list_display = [
+        "item",
+        "date",
+        "received_quantity",
+        "consumed_quantity",
+        "net_change",
+        "updated_by",
+        "created_at",
+    ]
+    list_filter = ["date", "item"]
+    search_fields = ["item__name", "notes", "updated_by__username"]
+    ordering = ["-date", "item__name"]
+    readonly_fields = ["net_change", "updated_by", "created_at", "updated_at"]
+    autocomplete_fields = ["item"]
+
+    @admin.display(description="Net Change")
+    def net_change(self, obj):
+        return obj.net_change

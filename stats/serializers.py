@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from product.models import Product
+from stats.models import BillPrintConfig
 
 
 class DashboardStatsSerializer(serializers.Serializer):
@@ -146,3 +147,28 @@ class RevenueBreakdownSerializer(serializers.Serializer):
         required=False,
         help_text="End date filter applied (YYYY-MM-DD).",
     )
+
+
+class BillPrintConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BillPrintConfig
+        fields = [
+            "id",
+            "bill_title",
+            "bill_footer",
+        ]
+        read_only_fields = ["id"]
+
+    def create(self, validated_data):
+        branch = self.context["request"].user.branch
+        config, _ = BillPrintConfig.objects.update_or_create(
+            branch=branch,
+            defaults=validated_data,
+        )
+        return config
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance

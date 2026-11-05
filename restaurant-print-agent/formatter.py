@@ -132,8 +132,11 @@ def format_kot(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     buf.extend(ALIGN_CENTER)
     buf.extend(_line_sep(width, "-"))
 
-    # App name — normal bold (same size as branch name)
-    buf.extend(BOLD_ON + b"CallEatMandu\n" + BOLD_OFF)
+    # App name / bill title from config (falls back to "Call Eat Mandu")
+    bill_config = order.get("bill_print_config") or {}
+    bill_title = _clean_text(str(bill_config.get("bill_title") or "")).strip()
+    header_text = bill_title if bill_title else "Call Eat Mandu"
+    buf.extend(BOLD_ON + header_text.encode("latin1", "replace") + b"\n" + BOLD_OFF)
 
     # Kitchen ticket title — reduced from TXT_TITLE to double height (cleaner, not stretched)
     buf.extend(
@@ -284,8 +287,16 @@ def format_bill(order: Dict[str, Any], width_mm: int = 80) -> bytes:
     # ── Initialize printer ────────────────────────────────────────
     buf.extend(INIT)
 
-    # ── Header: Centered Branch Name ──────────────────────────────
+    # ── Header: Bill title from config or "Call Eat Mandu" ──────────
+    bill_config = order.get("bill_print_config") or {}
+    bill_title = _clean_text(str(bill_config.get("bill_title") or "")).strip()
+    bill_footer = _clean_text(str(bill_config.get("bill_footer") or "")).strip()
+    header_text = bill_title if bill_title else "Call Eat Mandu"
+
     buf.extend(ALIGN_CENTER)
+    buf.extend(
+        BOLD_ON + header_text.encode("latin1", "replace") + b"\n" + BOLD_OFF
+    )
     buf.extend(BOLD_ON + branch_name.encode("latin1", "replace") + b"\n\n" + BOLD_OFF)
 
     # ── Order meta ────────────────────────────────────────────────
@@ -416,8 +427,9 @@ def format_bill(order: Dict[str, Any], width_mm: int = 80) -> bytes:
 
     # ── Footer ────────────────────────────────────────────────────
     buf.extend(ALIGN_CENTER)
-    buf.extend(BOLD_ON + b"THANK YOU\n" + BOLD_OFF)
-    buf.extend(b"calleatmandu.com\n")
+    if bill_footer:
+        buf.extend(bill_footer.encode("latin1", "replace") + b"\n")
+    buf.extend(BOLD_ON + b"THANK YOU FOR ORDERING\n" + BOLD_OFF)
 
     buf.extend(FEED_3)
     buf.extend(CUT_PAPER)

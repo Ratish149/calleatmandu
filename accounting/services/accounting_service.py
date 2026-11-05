@@ -10,6 +10,7 @@ from order.services.activity_log_service import ActivityLogService
 class CashExpenditureService:
     """
     Service layer handling business logic and workflows for Cash & Expenditure operations.
+    Calculates available balance: cash_amount + online_amount - delivery_charge.
     """
 
     @classmethod
@@ -20,45 +21,26 @@ class CashExpenditureService:
     ) -> CashExpenditure:
         """
         Creates a new Cash & Expenditure record.
-        - CASH_IN: Requires positive cash_amount (physical cash inflow).
-        - ONLINE_IN: Requires positive cash_amount (online/digital inflow).
-        - EXPENDITURE: Requires positive expenditure_amount (outflow).
+        - cash_amount: Cash received (>= 0).
+        - online_amount: Online amount received (>= 0).
+        - delivery_charge: Delivery charge spent (>= 0).
         Branch is automatically resolved from the logged-in user's assigned branch.
         An ActivityLog entry is created after successful save.
         """
-        entry_type = data.get("entry_type", CashExpenditure.EntryType.EXPENDITURE)
-        valid_entry_types = [choice[0] for choice in CashExpenditure.EntryType.choices]
-        if entry_type not in valid_entry_types:
-            raise ValidationError(
-                {"entry_type": f"Invalid entry_type. Must be one of: {', '.join(valid_entry_types)}"}
-            )
-
         cash_amount = float(data.get("cash_amount", 0.0) or 0.0)
-        expenditure_amount = float(data.get("expenditure_amount", 0.0) or 0.0)
+        online_amount = float(data.get("online_amount", 0.0) or 0.0)
+        delivery_charge = float(data.get("delivery_charge", 0.0) or 0.0)
 
         if cash_amount < 0:
             raise ValidationError({"cash_amount": "Cash amount cannot be negative."})
-        if expenditure_amount < 0:
-            raise ValidationError(
-                {"expenditure_amount": "Expenditure amount cannot be negative."}
-            )
-
-        # Enforce consistency based on entry_type
-        if entry_type in (
-            CashExpenditure.EntryType.CASH_IN,
-            CashExpenditure.EntryType.ONLINE_IN,
-        ):
-            if cash_amount <= 0:
-                raise ValidationError(
-                    {"cash_amount": f"Please provide a valid cash_amount greater than zero for {entry_type}."}
-                )
-            expenditure_amount = 0.0
-        elif entry_type == CashExpenditure.EntryType.EXPENDITURE:
-            if expenditure_amount <= 0:
-                raise ValidationError(
-                    {"expenditure_amount": "Please provide a valid expenditure_amount greater than zero for EXPENDITURE."}
-                )
-            cash_amount = 0.0
+        if online_amount < 0:
+            raise ValidationError({
+                "online_amount": "Online amount cannot be negative."
+            })
+        if delivery_charge < 0:
+            raise ValidationError({
+                "delivery_charge": "Delivery charge cannot be negative."
+            })
 
         # Always resolve branch from the logged-in user
         branch = None
@@ -66,31 +48,20 @@ class CashExpenditureService:
             branch = created_by.branch
 
         entry = CashExpenditure.objects.create(
-            title=data.get("title"),
-            entry_type=entry_type,
             cash_amount=cash_amount,
-            expenditure_amount=expenditure_amount,
+            online_amount=online_amount,
+            delivery_charge=delivery_charge,
             date=data.get("date"),
-            payment_method=data.get(
-                "payment_method", CashExpenditure.PaymentMethod.CASH
-            ),
             notes=data.get("notes"),
             receipt_image=data.get("receipt_image"),
             branch=branch,
             created_by=created_by,
         )
 
-        # Build human-readable description
-        if entry.entry_type == CashExpenditure.EntryType.EXPENDITURE:
-            amount_str = f"Expenditure: Rs. {expenditure_amount}"
-        elif entry.entry_type == CashExpenditure.EntryType.ONLINE_IN:
-            amount_str = f"Online In: Rs. {cash_amount}"
-        else:
-            amount_str = f"Cash In: Rs. {cash_amount}"
-
         description = (
-            f"New {entry.get_entry_type_display()} entry '{entry.title}' recorded. "
-            f"{amount_str} via {entry.get_payment_method_display()}. Net: Rs. {entry.net_amount}."
+            f"Cash entry recorded for {entry.date}: Cash: Rs. {cash_amount}, "
+            f"Online: Rs. {online_amount}, Delivery Charge: Rs. {delivery_charge}. "
+            f"Available Balance: Rs. {entry.available_balance}."
         )
 
         ActivityLogService.log_activity(
@@ -98,14 +69,13 @@ class CashExpenditureService:
             entity_type=ActivityLog.EntityType.CASH_EXPENDITURE,
             entity_name="CashExpenditure",
             record_id=entry.pk,
-            record_repr=entry.title,
+            record_repr=str(entry),
             description=description,
             changes={
-                "title": entry.title,
-                "entry_type": entry.entry_type,
                 "cash_amount": cash_amount,
-                "expenditure_amount": expenditure_amount,
-                "payment_method": entry.payment_method,
+                "online_amount": online_amount,
+                "delivery_charge": delivery_charge,
+                "available_balance": entry.available_balance,
                 "date": str(entry.date),
                 "branch": str(branch) if branch else None,
             },
@@ -125,59 +95,35 @@ class CashExpenditureService:
         Updates an existing Cash & Expenditure record.
         Captures a pre-save snapshot, applies updates, then logs the diff as an ActivityLog.
         """
-        # Snapshot before update for diff
         pre_snapshot = {
-            "title": instance.title,
-            "entry_type": instance.entry_type,
             "cash_amount": instance.cash_amount,
-            "expenditure_amount": instance.expenditure_amount,
-            "payment_method": instance.payment_method,
+            "online_amount": instance.online_amount,
+            "delivery_charge": instance.delivery_charge,
+            "available_balance": instance.available_balance,
             "date": str(instance.date),
             "notes": instance.notes,
         }
 
-        entry_type = data.get("entry_type", instance.entry_type)
-        valid_entry_types = [choice[0] for choice in CashExpenditure.EntryType.choices]
-        if entry_type not in valid_entry_types:
-            raise ValidationError(
-                {"entry_type": f"Invalid entry_type. Must be one of: {', '.join(valid_entry_types)}"}
-            )
-
         cash_amount = float(data.get("cash_amount", instance.cash_amount) or 0.0)
-        expenditure_amount = float(
-            data.get("expenditure_amount", instance.expenditure_amount) or 0.0
+        online_amount = float(data.get("online_amount", instance.online_amount) or 0.0)
+        delivery_charge = float(
+            data.get("delivery_charge", instance.delivery_charge) or 0.0
         )
 
         if cash_amount < 0:
             raise ValidationError({"cash_amount": "Cash amount cannot be negative."})
-        if expenditure_amount < 0:
-            raise ValidationError(
-                {"expenditure_amount": "Expenditure amount cannot be negative."}
-            )
-
-        # Enforce consistency based on entry_type
-        if entry_type in (
-            CashExpenditure.EntryType.CASH_IN,
-            CashExpenditure.EntryType.ONLINE_IN,
-        ):
-            if cash_amount <= 0:
-                raise ValidationError(
-                    {"cash_amount": f"Please provide a valid cash_amount greater than zero for {entry_type}."}
-                )
-            expenditure_amount = 0.0
-        elif entry_type == CashExpenditure.EntryType.EXPENDITURE:
-            if expenditure_amount <= 0:
-                raise ValidationError(
-                    {"expenditure_amount": "Please provide a valid expenditure_amount greater than zero for EXPENDITURE."}
-                )
-            cash_amount = 0.0
+        if online_amount < 0:
+            raise ValidationError({
+                "online_amount": "Online amount cannot be negative."
+            })
+        if delivery_charge < 0:
+            raise ValidationError({
+                "delivery_charge": "Delivery charge cannot be negative."
+            })
 
         # Apply updates
         updatable_fields = [
-            "title",
-            "entry_type",
             "date",
-            "payment_method",
             "notes",
             "receipt_image",
         ]
@@ -185,18 +131,16 @@ class CashExpenditureService:
             if field in data:
                 setattr(instance, field, data[field])
 
-        instance.entry_type = entry_type
         instance.cash_amount = cash_amount
-        instance.expenditure_amount = expenditure_amount
+        instance.online_amount = online_amount
+        instance.delivery_charge = delivery_charge
         instance.save()
 
-        # Compute changes for activity log
         post_snapshot = {
-            "title": instance.title,
-            "entry_type": instance.entry_type,
             "cash_amount": instance.cash_amount,
-            "expenditure_amount": instance.expenditure_amount,
-            "payment_method": instance.payment_method,
+            "online_amount": instance.online_amount,
+            "delivery_charge": instance.delivery_charge,
+            "available_balance": instance.available_balance,
             "date": str(instance.date),
             "notes": instance.notes,
         }
@@ -213,19 +157,19 @@ class CashExpenditureService:
                 for field, diff in field_changes.items()
             ]
             description = (
-                f"Cash & Expenditure entry '{instance.title}' updated. "
-                + ", ".join(summary_parts)
-                + "."
+                f"Cash entry '{instance}' updated. " + ", ".join(summary_parts) + "."
             )
         else:
-            description = f"Cash & Expenditure entry '{instance.title}' updated (no field changes detected)."
+            description = (
+                f"Cash entry '{instance}' updated (no field changes detected)."
+            )
 
         ActivityLogService.log_activity(
             action_type=ActivityLog.ActionType.UPDATE,
             entity_type=ActivityLog.EntityType.CASH_EXPENDITURE,
             entity_name="CashExpenditure",
             record_id=instance.pk,
-            record_repr=instance.title,
+            record_repr=str(instance),
             description=description,
             changes=field_changes,
             user=updated_by,

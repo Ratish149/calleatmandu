@@ -26,6 +26,7 @@ from order.models import Order
 from order.permissions import IsStaffOrReadOnly
 from order.selectors import (
     get_activity_logs_queryset,
+    get_customer_flag,
     get_customer_orders_queryset,
     get_order_activity_logs_queryset,
     get_order_config,
@@ -34,6 +35,7 @@ from order.selectors import (
 from order.serializers import (
     ActivityLogSerializer,
     AssignRiderSerializer,
+    CustomerFlagSerializer,
     OrderConfigSerializer,
     OrderCreateSerializer,
     OrderResponseSerializer,
@@ -665,3 +667,33 @@ class OrderPhoneExportAPIView(GenericAPIView):
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         response["Content-Length"] = len(excel_file.getvalue())
         return response
+
+
+class CustomerFlagAPIView(GenericAPIView):
+    """
+    GET /orders/customer-flag/?phone=98XXXXXXXX
+
+    Checks a customer's order history by phone number and returns
+    a trust flag: GREEN (safe to take order) or RED (potential risk).
+
+    Flag logic:
+      GREEN — No order history (new customer).
+      GREEN — Has orders, zero cancellations.
+      RED   — Has 1 or more cancellations.
+      GREEN — Was RED but placed 3+ prepaid orders after last cancellation.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CustomerFlagSerializer
+
+    def get(self, request, *args, **kwargs):
+        phone = request.query_params.get("phone", "").strip()
+        if not phone:
+            return Response(
+                {"detail": "Query parameter 'phone' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = get_customer_flag(phone)
+        serializer = self.get_serializer(result)
+        return Response(serializer.data, status=status.HTTP_200_OK)
