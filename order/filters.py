@@ -5,7 +5,8 @@ from order.models import ActivityLog, Order
 
 
 class OrderFilter(filters.FilterSet):
-    status = filters.ChoiceFilter(choices=Order.OrderStatus.choices)
+    status = filters.CharFilter(method="filter_status")
+    order_status = filters.CharFilter(method="filter_status")
     payment_type = filters.ChoiceFilter(choices=Order.PaymentType.choices)
     order_type = filters.ChoiceFilter(choices=Order.OrderType.choices)
     is_paid = filters.BooleanFilter()
@@ -22,6 +23,7 @@ class OrderFilter(filters.FilterSet):
         model = Order
         fields = [
             "status",
+            "order_status",
             "payment_type",
             "order_type",
             "is_paid",
@@ -38,6 +40,15 @@ class OrderFilter(filters.FilterSet):
             "start_date",
             "end_date",
         ]
+
+    def filter_status(self, queryset, name, value):
+        if not value:
+            return queryset
+        val = str(value).strip().upper()
+        valid_statuses = set(Order.OrderStatus.values)
+        if val in valid_statuses:
+            return queryset.filter(status=val)
+        return queryset.filter(status=value)
 
     def filter_start_date(self, queryset, name, value):
         if not value:

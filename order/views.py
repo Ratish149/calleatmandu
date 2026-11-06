@@ -56,7 +56,21 @@ class OrderListCreateAPIView(ListCreateAPIView):
     search_fields = ["customer_name", "phone_number", "order_number", "barcode_number"]
 
     def get_queryset(self):
-        return get_orders_for_user_queryset(self.request.user)
+        status_filter = None
+        if (
+            hasattr(self, "request")
+            and self.request
+            and hasattr(self.request, "query_params")
+        ):
+            status_filter = self.request.query_params.get(
+                "order_status"
+            ) or self.request.query_params.get("status")
+        user = (
+            getattr(self.request, "user", None)
+            if hasattr(self, "request") and self.request
+            else None
+        )
+        return get_orders_for_user_queryset(user, status_filter=status_filter)
 
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
@@ -397,7 +411,21 @@ class RecentOrdersAPIView(GenericAPIView):
     serializer_class = OrderResponseSerializer
 
     def get_queryset(self):
-        return get_orders_for_user_queryset(self.request.user)
+        status_filter = None
+        if (
+            hasattr(self, "request")
+            and self.request
+            and hasattr(self.request, "query_params")
+        ):
+            status_filter = self.request.query_params.get(
+                "order_status"
+            ) or self.request.query_params.get("status")
+        user = (
+            getattr(self.request, "user", None)
+            if hasattr(self, "request") and self.request
+            else None
+        )
+        return get_orders_for_user_queryset(user, status_filter=status_filter)
 
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
