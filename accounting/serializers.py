@@ -1,7 +1,15 @@
 from rest_framework import serializers
 
-from accounting.models import CashExpenditure, Vendor, VendorTransaction
-from accounting.services.accounting_service import CashExpenditureService
+from accounting.models import (
+    CashExpenditure,
+    CreditEntry,
+    CreditSettlement,
+    Vendor,
+    VendorTransaction,
+)
+from accounting.services.accounting_service import (
+    CashExpenditureService,
+)
 from accounting.services.vendor_service import VendorService, VendorTransactionService
 
 
@@ -22,6 +30,7 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
     )
     available_balance = serializers.FloatField(read_only=True)
     net_amount = serializers.FloatField(read_only=True)
+    total_sales = serializers.FloatField(read_only=True)
 
     class Meta:
         model = CashExpenditure
@@ -29,8 +38,10 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             "id",
             "cash_amount",
             "online_amount",
+            "credit_amount",
             "delivery_charge",
             "available_balance",
+            "total_sales",
             "net_amount",
             "date",
             "notes",
@@ -45,6 +56,7 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "available_balance",
+            "total_sales",
             "net_amount",
             "branch",
             "branch_name",
@@ -60,6 +72,10 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
         )
         online_amount = float(
             attrs.get("online_amount", getattr(self.instance, "online_amount", 0.0))
+            or 0.0
+        )
+        credit_amount = float(
+            attrs.get("credit_amount", getattr(self.instance, "credit_amount", 0.0))
             or 0.0
         )
         delivery_charge = float(
@@ -78,6 +94,10 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "online_amount": "Online amount cannot be negative."
             })
+        if credit_amount < 0:
+            raise serializers.ValidationError({
+                "credit_amount": "Credit amount cannot be negative."
+            })
         if delivery_charge < 0:
             raise serializers.ValidationError({
                 "delivery_charge": "Delivery charge cannot be negative."
@@ -85,6 +105,7 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
 
         attrs["cash_amount"] = cash_amount
         attrs["online_amount"] = online_amount
+        attrs["credit_amount"] = credit_amount
         attrs["delivery_charge"] = delivery_charge
 
         return attrs
@@ -104,17 +125,23 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
 
 class CashBalanceSummarySerializer(serializers.Serializer):
     """
-    Serializer representing the balance summary:
-    Total cash amount, total online amount, total delivery charge,
-    vendor payment amount, and net available balance
-    (total_cash_amount + total_online_amount - total_delivery_charge - total_vendor_paid_amount).
+    Balance summary serializer.
+
+    total_cash_amount   includes settled credit cash payments.
+    total_online_amount includes settled credit online payments.
+    total_credit_amount is the raw total credit given (for reference).
+    available_balance   = cash + online - vendor_paid
     """
 
     total_cash_amount = serializers.FloatField(
-        help_text="Sum of all physical cash amounts."
+        help_text="Sum of collected cash + credit settled via cash."
     )
     total_online_amount = serializers.FloatField(
-        help_text="Sum of all digital/online amounts."
+        help_text="Sum of collected online + credit settled via online."
+    )
+    total_credit_amount = serializers.FloatField(
+        default=0.0,
+        help_text="Total credit amount given across entries in this period.",
     )
     total_delivery_charge = serializers.FloatField(
         help_text="Sum of all delivery charges."
@@ -124,13 +151,49 @@ class CashBalanceSummarySerializer(serializers.Serializer):
         help_text="Sum of all payments made to vendors.",
     )
     total_available_balance = serializers.FloatField(
-        help_text="Net available balance (total_cash_amount + total_online_amount - total_delivery_charge - total_vendor_paid_amount)."
+        help_text="Net collected balance (cash + online - vendor_paid)."
     )
     available_balance = serializers.FloatField(
         help_text="Alias for total_available_balance."
     )
     total_entries = serializers.IntegerField(
-        help_text="Total number of transaction records."
+        help_text="Total number of cash entry records."
+    )
+    start_date = serializers.CharField(
+        allow_null=True,
+        required=False,
+        help_text="Start date filter applied (YYYY-MM-DD).",
+    )
+    end_date = serializers.CharField(
+        allow_null=True,
+        required=False,
+        help_text="End date filter applied (YYYY-MM-DD).",
+    )
+
+
+class CreditStatsSerializer(serializers.Serializer):
+    """
+    Serializer for the dedicated credit statistics endpoint.
+    Shows total credit given, how much has been settled, and remaining outstanding.
+    """
+
+    total_credit_amount = serializers.FloatField(
+        help_text="Total credit amount given across all entries in the period."
+    )
+    total_credit_settled = serializers.FloatField(
+        help_text="Total amount settled/collected from outstanding credits."
+    )
+    total_credit_remaining = serializers.FloatField(
+        help_text="Outstanding credit not yet collected (total_credit_amount - total_credit_settled)."
+    )
+    settled_count = serializers.IntegerField(
+        help_text="Number of fully settled credit entries."
+    )
+    pending_count = serializers.IntegerField(
+        help_text="Number of credit entries still pending settlement."
+    )
+    total_entries = serializers.IntegerField(
+        help_text="Total credit entries in the period."
     )
     start_date = serializers.CharField(
         allow_null=True,
@@ -217,6 +280,9 @@ class VendorTransactionSerializer(serializers.ModelSerializer):
     payment_method_display = serializers.CharField(
         source="get_payment_method_display", read_only=True
     )
+    receipt_type_display = serializers.CharField(
+        source="get_receipt_type_display", read_only=True
+    )
 
     class Meta:
         model = VendorTransaction
@@ -232,6 +298,8 @@ class VendorTransactionSerializer(serializers.ModelSerializer):
             "payment_method_display",
             "notes",
             "receipt_image",
+            "receipt_type",
+            "receipt_type_display",
             "branch",
             "branch_name",
             "created_by",
@@ -244,6 +312,7 @@ class VendorTransactionSerializer(serializers.ModelSerializer):
             "vendor_name",
             "transaction_type_display",
             "payment_method_display",
+            "receipt_type_display",
             "branch",
             "branch_name",
             "created_by",
@@ -262,6 +331,16 @@ class VendorTransactionSerializer(serializers.ModelSerializer):
         if value not in valid:
             raise serializers.ValidationError(
                 f"transaction_type must be one of: {', '.join(valid)}."
+            )
+        return value
+
+    def validate_receipt_type(self, value):
+        if value in (None, ""):
+            return value
+        valid = [r.value for r in VendorTransaction.ReceiptType]
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"receipt_type must be one of: {', '.join(valid)}."
             )
         return value
 
@@ -354,3 +433,175 @@ class VendorSummaryResponseSerializer(serializers.Serializer):
         required=False,
         help_text="End date filter applied (YYYY-MM-DD).",
     )
+
+
+class CreditSettlementSerializer(serializers.ModelSerializer):
+    """
+    Serializer for recording and viewing a CreditSettlement.
+    - cash_settled: Amount paid via cash.
+    - online_settled: Amount paid via online.
+    - total_settled and payment_method are computed read-only fields.
+    """
+
+    total_settled = serializers.FloatField(read_only=True)
+    payment_method = serializers.CharField(read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    created_by_username = serializers.CharField(
+        source="created_by.username", read_only=True
+    )
+
+    class Meta:
+        model = CreditSettlement
+        fields = [
+            "id",
+            "cash_settled",
+            "online_settled",
+            "total_settled",
+            "payment_method",
+            "settled_date",
+            "notes",
+            "branch",
+            "branch_name",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "total_settled",
+            "payment_method",
+            "branch",
+            "branch_name",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        cash_settled = float(attrs.get("cash_settled", 0.0) or 0.0)
+        online_settled = float(attrs.get("online_settled", 0.0) or 0.0)
+
+        if cash_settled < 0:
+            raise serializers.ValidationError({
+                "cash_settled": "Cash settled cannot be negative."
+            })
+        if online_settled < 0:
+            raise serializers.ValidationError({
+                "online_settled": "Online settled cannot be negative."
+            })
+        if cash_settled == 0 and online_settled == 0:
+            raise serializers.ValidationError(
+                "Either cash_settled or online_settled must be greater than zero."
+            )
+        if cash_settled > 0 and online_settled > 0:
+            raise serializers.ValidationError(
+                "Settlement must be via either Cash or Online — not both."
+            )
+
+        attrs["cash_settled"] = cash_settled
+        attrs["online_settled"] = online_settled
+        return attrs
+
+
+class CreditEntrySerializer(serializers.ModelSerializer):
+    """
+    Serializer for CreditEntry — a credit amount linked to a CashExpenditure entry.
+    Includes nested settlement details (read-only) and computed balance fields.
+    """
+
+    cash_entry_date = serializers.DateField(source="cash_entry.date", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    created_by_username = serializers.CharField(
+        source="created_by.username", read_only=True
+    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    amount_settled = serializers.FloatField(read_only=True)
+    amount_remaining = serializers.FloatField(read_only=True)
+    is_fully_settled = serializers.BooleanField(read_only=True)
+    settlement = CreditSettlementSerializer(read_only=True)
+    credit_notes = serializers.CharField(
+        source="notes",
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Remarks about this credit.",
+    )
+
+    class Meta:
+        model = CreditEntry
+        fields = [
+            "id",
+            "cash_entry",
+            "cash_entry_date",
+            "credit_amount",
+            "status",
+            "status_display",
+            "credit_notes",
+            "amount_settled",
+            "amount_remaining",
+            "is_fully_settled",
+            "settlement",
+            "branch",
+            "branch_name",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "cash_entry_date",
+            "status",
+            "status_display",
+            "amount_settled",
+            "amount_remaining",
+            "is_fully_settled",
+            "settlement",
+            "branch",
+            "branch_name",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        ]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        user = request.user if request and request.user.is_authenticated else None
+        branch = getattr(user, "branch", None) if user else None
+
+        credit_entry = CreditEntry.objects.create(
+            cash_entry=validated_data["cash_entry"],
+            credit_amount=validated_data["credit_amount"],
+            notes=validated_data.get("notes"),
+            branch=branch,
+            created_by=user,
+        )
+        return credit_entry
+
+
+class CreditSettleActionSerializer(serializers.Serializer):
+    """
+    Serializer for the settle action on a CreditEntry.
+    Accepts cash_settled, online_settled, settled_date, and notes.
+    """
+
+    cash_settled = serializers.FloatField(default=0.0, min_value=0)
+    online_settled = serializers.FloatField(default=0.0, min_value=0)
+    settled_date = serializers.DateField(required=False, allow_null=True)
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        cash_settled = float(attrs.get("cash_settled", 0.0) or 0.0)
+        online_settled = float(attrs.get("online_settled", 0.0) or 0.0)
+        if cash_settled == 0 and online_settled == 0:
+            raise serializers.ValidationError(
+                "Either cash_settled or online_settled must be greater than zero."
+            )
+        if cash_settled > 0 and online_settled > 0:
+            raise serializers.ValidationError(
+                "Settlement must be via either Cash or Online — not both."
+            )
+        return attrs

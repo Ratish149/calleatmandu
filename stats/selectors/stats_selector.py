@@ -35,8 +35,14 @@ def get_night_service_shift_range(
             parsed_date = datetime.strptime(target_date.strip(), "%Y-%m-%d").date()
         except (ValueError, TypeError):
             parsed_date = None
-    elif hasattr(target_date, "year") and hasattr(target_date, "month") and hasattr(target_date, "day"):
-        parsed_date = target_date.date() if isinstance(target_date, datetime) else target_date
+    elif (
+        hasattr(target_date, "year")
+        and hasattr(target_date, "month")
+        and hasattr(target_date, "day")
+    ):
+        parsed_date = (
+            target_date.date() if isinstance(target_date, datetime) else target_date
+        )
 
     if parsed_date:
         shift_date = parsed_date
@@ -81,10 +87,9 @@ def get_dashboard_stats(
     today_orders_qs = order_qs.filter(created_at__gte=start_dt, created_at__lte=end_dt)
     total_orders_today = today_orders_qs.count()
 
-    today_revenue_aggregate = (
-        today_orders_qs.exclude(status=Order.OrderStatus.CANCELLED)
-        .aggregate(total=Sum("total_amount"))
-    )
+    today_revenue_aggregate = today_orders_qs.exclude(
+        status=Order.OrderStatus.CANCELLED
+    ).aggregate(total=Sum("total_amount"))
     total_revenue_today = round(float(today_revenue_aggregate["total"] or 0.0), 2)
 
     revenue_aggregate = order_qs.exclude(status=Order.OrderStatus.CANCELLED).aggregate(

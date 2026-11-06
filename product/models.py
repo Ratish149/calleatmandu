@@ -173,6 +173,7 @@ class KitchenInventoryItem(BaseModel):
         PACKET = "pkt", "Packet (pkt)"
         BOTTLE = "btl", "Bottle (btl)"
         BOX = "box", "Box (box)"
+        BUNCH = "bunch", "Bunch (bunch)"
 
     name = models.CharField(max_length=150, unique=True, db_index=True)
     unit = models.CharField(max_length=10, choices=Unit.choices, default=Unit.KG)

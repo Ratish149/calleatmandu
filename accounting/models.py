@@ -98,6 +98,10 @@ class VendorTransaction(BaseModel):
         CHEQUE = "CHEQUE", "Cheque"
         OTHER = "OTHER", "Other"
 
+    class ReceiptType(models.TextChoices):
+        VAT = "VAT", "VAT Receipt"
+        NON_VAT = "NON_VAT", "Non-VAT Receipt"
+
     vendor = models.ForeignKey(
         Vendor,
         on_delete=models.CASCADE,
@@ -139,6 +143,14 @@ class VendorTransaction(BaseModel):
         blank=True,
         null=True,
         help_text="Optional uploaded bill, voucher, or receipt for this transaction.",
+    )
+    receipt_type = models.CharField(
+        max_length=10,
+        choices=ReceiptType.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Indicates whether the receipt is VAT or Non-VAT.",
     )
     branch = models.ForeignKey(
         "user_account.Branch",
@@ -205,6 +217,14 @@ class CashExpenditure(BaseModel):
         db_index=True,
         help_text="Online or digital amount received (eSewa, Khalti, Bank Transfer, etc.).",
     )
+    credit_amount = models.FloatField(
+        default=0.0,
+        db_index=True,
+        help_text=(
+            "Amount given on credit (not yet collected). "
+            "Total sales = cash + online + credit - delivery_charge."
+        ),
+    )
     delivery_charge = models.FloatField(
         default=0.0,
         db_index=True,
@@ -264,7 +284,8 @@ class CashExpenditure(BaseModel):
     @property
     def available_balance(self) -> float:
         """
-        Calculates available balance:
+        Calculates available (collected) balance — credit is excluded
+        because it has not been collected yet:
         cash_amount + online_amount - delivery_charge
         """
         return round(
@@ -275,6 +296,215 @@ class CashExpenditure(BaseModel):
         )
 
     @property
+    def total_sales(self) -> float:
+        """
+        Total sales amount for the entry including credit (uncollected):
+        cash_amount + online_amount + credit_amount - delivery_charge
+        """
+        return round(
+            float(self.cash_amount or 0.0)
+            + float(self.online_amount or 0.0)
+            + float(self.credit_amount or 0.0)
+            - float(self.delivery_charge or 0.0),
+            2,
+        )
+
+    @property
     def net_amount(self) -> float:
         """Alias for available_balance."""
         return self.available_balance
+
+
+class CreditEntry(BaseModel):
+    """
+    Records a credit amount linked to a CashExpenditure entry.
+    Credit represents sales that were not collected on the day —
+    the customer owes this amount and it will be settled later.
+
+    Total sales = cash_amount + online_amount + credit_amount - delivery_charge.
+    Available (collected) balance = cash_amount + online_amount - delivery_charge.
+
+    One CashExpenditure entry can have at most one CreditEntry.
+    Settlement is tracked in CreditSettlement.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        SETTLED = "SETTLED", "Settled"
+
+    cash_entry = models.OneToOneField(
+        CashExpenditure,
+        on_delete=models.CASCADE,
+        related_name="credit_entry",
+        db_index=True,
+        help_text="The cash entry this credit is associated with.",
+    )
+    credit_amount = models.FloatField(
+        help_text="Total credit amount given (amount yet to be collected).",
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+        help_text="Settlement status: PENDING or SETTLED.",
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Remarks about this credit (e.g. who owes, reason).",
+    )
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credit_entries",
+        db_index=True,
+        help_text="Branch this credit belongs to.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorded_credit_entries",
+        db_index=True,
+        help_text="Staff who recorded this credit.",
+    )
+
+    class Meta:
+        db_table = "accounting_credit_entry"
+        ordering = ["-created_at"]
+        verbose_name = "Credit Entry"
+        verbose_name_plural = "Credit Entries"
+        indexes = [
+            models.Index(fields=["branch", "status"]),
+            models.Index(fields=["status", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"Credit Rs. {self.credit_amount} on {self.cash_entry.date} "
+            f"[{self.get_status_display()}]"
+        )
+
+    @property
+    def amount_settled(self) -> float:
+        """Total amount settled so far from CreditSettlement."""
+        result = (
+            self.settlement.aggregate(
+                total=models.Sum(
+                    models.ExpressionWrapper(
+                        models.F("cash_settled") + models.F("online_settled"),
+                        output_field=models.FloatField(),
+                    )
+                )
+            )
+            if hasattr(self, "settlement")
+            else {"total": None}
+        )
+        # settlement is OneToOne so wrap safely
+        try:
+            s = self.settlement
+            return round(
+                float(s.cash_settled or 0.0) + float(s.online_settled or 0.0), 2
+            )
+        except CreditSettlement.DoesNotExist:
+            return 0.0
+
+    @property
+    def amount_remaining(self) -> float:
+        """Outstanding credit amount not yet settled."""
+        return round(float(self.credit_amount or 0.0) - self.amount_settled, 2)
+
+    @property
+    def is_fully_settled(self) -> bool:
+        """True when the full credit amount has been settled."""
+        return self.amount_remaining <= 0.0
+
+
+class CreditSettlement(BaseModel):
+    """
+    Records the settlement of a CreditEntry.
+    One CreditEntry has exactly one CreditSettlement.
+    Settlement can be split between cash and online payments.
+    """
+
+    class PaymentMethod(models.TextChoices):
+        CASH = "CASH", "Cash"
+        ONLINE = "ONLINE", "Online"
+
+    credit_entry = models.OneToOneField(
+        CreditEntry,
+        on_delete=models.CASCADE,
+        related_name="settlement",
+        db_index=True,
+        help_text="The credit entry being settled.",
+    )
+    cash_settled = models.FloatField(
+        default=0.0,
+        help_text="Amount settled via cash.",
+    )
+    online_settled = models.FloatField(
+        default=0.0,
+        help_text="Amount settled via online/digital payment.",
+    )
+    settled_date = models.DateField(
+        default=timezone.now,
+        db_index=True,
+        help_text="Date when the credit was settled.",
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Remarks about this settlement.",
+    )
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credit_settlements",
+        db_index=True,
+        help_text="Branch this settlement belongs to.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorded_credit_settlements",
+        db_index=True,
+        help_text="Staff who recorded this settlement.",
+    )
+
+    class Meta:
+        db_table = "accounting_credit_settlement"
+        ordering = ["-settled_date", "-created_at"]
+        verbose_name = "Credit Settlement"
+        verbose_name_plural = "Credit Settlements"
+        indexes = [
+            models.Index(fields=["branch", "settled_date"]),
+            models.Index(fields=["settled_date", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"Settlement for Credit #{self.credit_entry_id} on {self.settled_date}: "
+            f"Cash Rs. {self.cash_settled}, Online Rs. {self.online_settled}"
+        )
+
+    @property
+    def total_settled(self) -> float:
+        """Total amount settled (cash + online)."""
+        return round(
+            float(self.cash_settled or 0.0) + float(self.online_settled or 0.0), 2
+        )
+
+    @property
+    def payment_method(self) -> str:
+        """Derived payment method: CASH or ONLINE based on how the settlement was paid."""
+        if float(self.online_settled or 0.0) > 0:
+            return self.PaymentMethod.ONLINE
+        return self.PaymentMethod.CASH

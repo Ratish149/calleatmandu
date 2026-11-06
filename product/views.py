@@ -340,11 +340,7 @@ class KitchenInventoryLogListCreateAPIView(ListCreateAPIView):
     ordering = ["-date"]
 
     def get_queryset(self):
-        return (
-            KitchenInventoryLog.objects
-            .select_related("item", "updated_by")
-            .all()
-        )
+        return KitchenInventoryLog.objects.select_related("item", "updated_by").all()
 
 
 class KitchenInventoryLogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
@@ -353,6 +349,9 @@ class KitchenInventoryLogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIVi
     PUT    /kitchen/inventory/logs/<pk>/  — kitchen staff: full update (corrects total_quantity)
     PATCH  /kitchen/inventory/logs/<pk>/  — kitchen staff: partial update
     DELETE /kitchen/inventory/logs/<pk>/  — admin only: delete a log entry
+                                           On delete, the log's net impact
+                                           (received − consumed) is reversed on
+                                           the item's current stock atomically.
     """
 
     serializer_class = KitchenInventoryLogSerializer
@@ -363,8 +362,16 @@ class KitchenInventoryLogRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIVi
         return [IsStaffOrOperationalRole()]
 
     def get_queryset(self):
-        return (
-            KitchenInventoryLog.objects
-            .select_related("item", "updated_by")
-            .all()
-        )
+        return KitchenInventoryLog.objects.select_related("item", "updated_by").all()
+
+    def perform_destroy(self, instance):
+        from django.db import transaction
+        from django.db.models import F
+
+        with transaction.atomic():
+            # Reverse the log's net stock impact before deleting
+            # net_change = received - consumed; reversing = subtract net_change
+            KitchenInventoryItem.objects.filter(pk=instance.item_id).update(
+                total_quantity=F("total_quantity") - instance.net_change
+            )
+            instance.delete()
