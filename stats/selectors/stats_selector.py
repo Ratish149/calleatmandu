@@ -80,7 +80,7 @@ def get_dashboard_stats(
     """
     start_dt, end_dt = get_night_service_shift_range(target_date=target_date)
 
-    order_qs = Order.objects.all()
+    order_qs = Order.objects.filter(only_save=False)
     if branch_id:
         order_qs = order_qs.filter(branch_id=branch_id)
 

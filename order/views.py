@@ -88,7 +88,7 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
     def get_queryset(self):
         queryset = (
             Order.objects
-            .filter(is_pos_order=True)
+            .filter(is_pos_order=True, only_save=False)
             .select_related(
                 "branch",
                 "user",
@@ -307,11 +307,12 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             "payment_type",
             "is_paid",
             "discount_type",
+            "only_save",
         ]
         for field in updatable_fields:
             if field in raw:
                 value = raw[field]
-                if field == "is_paid":
+                if field in ("is_paid", "only_save"):
                     # Accept boolean strings from JSON body
                     if isinstance(value, str):
                         value = value.lower() in ("true", "1", "yes")
@@ -639,8 +640,11 @@ class OrderPhoneExportAPIView(GenericAPIView):
             return Order.objects.none()
 
         if user.is_superuser or getattr(user, "role", None) == "admin":
-            return Order.objects.exclude(phone_number__isnull=True).exclude(
-                phone_number=""
+            return (
+                Order.objects
+                .filter(only_save=False)
+                .exclude(phone_number__isnull=True)
+                .exclude(phone_number="")
             )
 
         return Order.objects.none()

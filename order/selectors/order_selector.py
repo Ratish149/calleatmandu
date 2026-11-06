@@ -10,6 +10,7 @@ def get_customer_orders_queryset(customer_id: int):
     Pre-fetches branch, user, created_by, assigned rider, offers, promo code,
     items with products, extras, nps transactions, and status history.
     Also includes any unlinked guest orders matching the customer's registered phone number.
+    Excludes draft/unconfirmed orders (only_save=True) from customer history.
     """
     customer = User.objects.filter(id=customer_id).first()
     if not customer:
@@ -26,6 +27,7 @@ def get_customer_orders_queryset(customer_id: int):
     return (
         Order.objects
         .filter(q)
+        .filter(only_save=False)
         .select_related(
             "branch",
             "user",
@@ -108,9 +110,11 @@ def get_orders_for_user_queryset(user):
       - If user is rider: returns orders assigned to this rider.
       - If user is customer / other: returns only orders placed by this user.
     - If unauthenticated: returns empty queryset.
+    - Excludes draft/unconfirmed orders (only_save=True) from all role-based queries.
     """
     base_queryset = (
         Order.objects
+        .filter(only_save=False)
         .select_related(
             "branch",
             "user",
@@ -152,4 +156,3 @@ def get_orders_for_user_queryset(user):
         return base_queryset.filter(assigned_to_rider=user)
 
     return base_queryset.filter(user=user)
-

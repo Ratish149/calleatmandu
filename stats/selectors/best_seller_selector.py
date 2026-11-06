@@ -11,7 +11,7 @@ def get_best_seller_products(branch_id=None, category_id=None, limit=5):
     Excludes items from CANCELLED orders.
     Optionally filters by branch_id and category (by id or slug/name).
     """
-    order_filter = ~Q(order_items__order__status=Order.OrderStatus.CANCELLED)
+    order_filter = ~Q(order_items__order__status=Order.OrderStatus.CANCELLED) & Q(order_items__order__only_save=False)
     if branch_id:
         order_filter &= Q(order_items__order__branch_id=branch_id)
 
@@ -52,7 +52,7 @@ def get_best_seller_categories(branch_id=None, limit=5):
     Excludes items from CANCELLED orders.
     Optionally filters by branch_id.
     """
-    cat_order_filter = ~Q(product__order_items__order__status=Order.OrderStatus.CANCELLED)
+    cat_order_filter = ~Q(product__order_items__order__status=Order.OrderStatus.CANCELLED) & Q(product__order_items__order__only_save=False)
     if branch_id:
         cat_order_filter &= Q(product__order_items__order__branch_id=branch_id)
 

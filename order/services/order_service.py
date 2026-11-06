@@ -666,6 +666,9 @@ class OrderService:
 
         total_amount = max(0.0, round(subtotal - discount_amount + delivery_fee, 2))
 
+        # Determine only_save flag — draft orders are NOT confirmed
+        only_save = bool(order_data.get("only_save", False))
+
         # Create Order
         order = Order(
             user=customer_user
@@ -691,7 +694,9 @@ class OrderService:
             order_type=order_data.get("order_type", Order.OrderType.DINEIN),
             transaction_id=order_data.get("transaction_id"),
             is_paid=order_data.get("is_paid", False),
-            status=Order.OrderStatus.CONFIRMED,
+            only_save=only_save,
+            # Draft (only_save=True) orders remain PENDING; confirmed orders become CONFIRMED
+            status=Order.OrderStatus.PENDING if only_save else Order.OrderStatus.CONFIRMED,
         )
         order._skip_signal_create = True
         order._skip_activity_log = True
@@ -771,7 +776,8 @@ class OrderService:
             description=(
                 f"POS Order #{order.order_number} created{items_summary} for customer "
                 f"'{order.customer_name or 'Walk-in'}' (Status: {order.status}, "
-                f"Type: {order.order_type}, Total: Rs. {order.total_amount})."
+                f"Type: {order.order_type}, Total: Rs. {order.total_amount}"
+                f"{', Draft/Save-Only' if order.only_save else ''})."
             ),
             changes={
                 "order_number": order.order_number,
@@ -781,6 +787,7 @@ class OrderService:
                 "total_amount": order.total_amount,
                 "customer_name": order.customer_name,
                 "phone_number": order.phone_number,
+                "only_save": order.only_save,
                 "items": item_reprs,
             },
         )

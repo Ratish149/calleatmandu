@@ -12,6 +12,9 @@ class OrderFilter(filters.FilterSet):
     branch = filters.NumberFilter(field_name="branch__id")
     search = filters.CharFilter(method="filter_search")
     is_pos_order = filters.BooleanFilter()
+    only_save = filters.BooleanFilter(
+        help_text="Filter by only_save flag. True = draft/unconfirmed orders only. False = confirmed orders only.",
+    )
     start_date = filters.CharFilter(method="filter_start_date")
     end_date = filters.CharFilter(method="filter_end_date")
 
@@ -30,6 +33,7 @@ class OrderFilter(filters.FilterSet):
             "phone_number",
             "search",
             "is_pos_order",
+            "only_save",
             "discount_type",
             "start_date",
             "end_date",
