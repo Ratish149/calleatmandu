@@ -1,4 +1,4 @@
-"""Resolves the effective AI order capabilities for a branch.
+"""Resolves the effective AI chat and order capabilities for a branch.
 
 Environment variables in ``settings`` act as the defaults; a nullable
 ``BranchAISettings`` row (managed from the admin UI) overrides individual
@@ -26,6 +26,8 @@ def resolve_conversation_branch_id(conversation) -> Optional[Union[int, str]]:
 
 @dataclass(frozen=True)
 class OrderFeatureFlags:
+    chat_enabled: bool
+    reply_delay_seconds: int
     creation_enabled: bool
     cancellation_enabled: bool
     cancellation_window_minutes: int
@@ -34,6 +36,8 @@ class OrderFeatureFlags:
 
 def _env_defaults() -> OrderFeatureFlags:
     return OrderFeatureFlags(
+        chat_enabled=getattr(settings, "AI_REPLY_ENABLED", True),
+        reply_delay_seconds=int(getattr(settings, "AI_REPLY_DELAY_SECONDS", 120)),
         creation_enabled=getattr(settings, "AI_ORDER_CREATION_ENABLED", False),
         cancellation_enabled=getattr(settings, "AI_ORDER_CANCELLATION_ENABLED", False),
         cancellation_window_minutes=int(
@@ -48,11 +52,12 @@ def _env_defaults() -> OrderFeatureFlags:
 def get_order_feature_flags(
     branch_id: Optional[Union[int, str]] = None,
 ) -> OrderFeatureFlags:
-    """Return the effective order flags for ``branch_id``.
+    """Return the effective AI chat and order flags for ``branch_id``.
 
     Falls back to the environment defaults when no branch id is supplied or no
     ``BranchAISettings`` row exists. Any ``None`` field on an existing row
-    inherits the corresponding env default.
+    inherits the corresponding env default. ``AI_REPLY_ENABLED`` remains a
+    global kill switch: a branch cannot force AI chat on when it is false.
     """
     defaults = _env_defaults()
     if branch_id is None:
@@ -73,6 +78,11 @@ def get_order_feature_flags(
         return fallback if value is None else value
 
     return OrderFeatureFlags(
+        chat_enabled=defaults.chat_enabled
+        and pick(branch_settings.ai_chat_enabled, True),
+        reply_delay_seconds=pick(
+            branch_settings.ai_reply_delay_seconds, defaults.reply_delay_seconds
+        ),
         creation_enabled=pick(
             branch_settings.ai_order_creation_enabled, defaults.creation_enabled
         ),

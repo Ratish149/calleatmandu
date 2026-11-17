@@ -1,9 +1,12 @@
 import json
 from datetime import timedelta
+from io import StringIO
 from unittest.mock import Mock, patch
 
+import msgpack
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
+from django.core.management import call_command
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
@@ -125,7 +128,12 @@ class MessagingTestCase(TestCase):
         self.addCleanup(patcher.stop)
 
     def make_conversation(
-        self, conversation_id="zc-1", active=True, pending=False, task_id=None
+        self,
+        conversation_id="zc-1",
+        active=True,
+        pending=False,
+        task_id=None,
+        due_at=None,
     ):
         return Conversation.objects.create(
             zernio_conversation_id=conversation_id,
@@ -135,6 +143,7 @@ class MessagingTestCase(TestCase):
             ai_replies_active=active,
             ai_reply_pending=pending,
             ai_reply_task_id=task_id,
+            ai_reply_due_at=due_at,
         )
 
 
@@ -220,7 +229,7 @@ class ZernioWebhookAITest(MessagingTestCase):
         self.assertFalse(message.is_read)
         self.assertEqual(
             get_unread_counts_for_account(self.business_account.id),
-            {message.conversation_id: 1},
+            {str(message.conversation_id): 1},
         )
 
 
@@ -355,42 +364,111 @@ class ScheduleReplyTest(MessagingTestCase):
         conversation.refresh_from_db()
         self.assertFalse(conversation.ai_reply_pending)
 
-    def test_pending_reply_is_rescheduled_on_new_inbound(self):
-        conversation = self.make_conversation(pending=True)
-        with patch("message.tasks.send_ai_reply") as mock_task:
+    def test_branch_chat_disabled_skips(self):
+        branch = Branch.objects.create(
+            name="Lazimpat",
+            address="Lazimpat, Kathmandu",
+            latitude=27.7,
+            longitude=85.3,
+            phone="9800000000",
+        )
+        conversation = self.make_conversation()
+        conversation.branch = branch
+        conversation.save(update_fields=["branch"])
+        BranchAISettings.objects.create(branch=branch, ai_chat_enabled=False)
+
+        with override_settings(AI_REPLY_ENABLED=True):
             scheduled = AIReplyService.maybe_schedule_reply(conversation)
+
+        self.assertFalse(scheduled)
+        conversation.refresh_from_db()
+        self.assertFalse(conversation.ai_reply_pending)
+        self.assertIsNone(conversation.ai_reply_due_at)
+
+    def test_pending_reply_is_rescheduled_on_new_inbound(self):
+        conversation = self.make_conversation(pending=True, task_id="old-task")
+        before = timezone.now()
+        with override_settings(AI_REPLY_DELAY_SECONDS=120), patch(
+            "message.tasks.revoke_task"
+        ) as mock_revoke:
+            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        after = timezone.now()
+
         self.assertTrue(scheduled)
-        mock_task.apply_async.assert_called_once()
+        mock_revoke.assert_called_once_with("old-task")
         conversation.refresh_from_db()
         self.assertTrue(conversation.ai_reply_pending)
         self.assertTrue(conversation.ai_reply_task_id)
+        self.assertNotEqual(conversation.ai_reply_task_id, "old-task")
+        self.assertGreaterEqual(
+            conversation.ai_reply_due_at, before + timedelta(seconds=120)
+        )
+        self.assertLessEqual(
+            conversation.ai_reply_due_at, after + timedelta(seconds=120)
+        )
 
     def test_inbound_reactivates_inactive_conversation(self):
         conversation = self.make_conversation(active=False)
-        with patch("message.tasks.send_ai_reply"):
-            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        scheduled = AIReplyService.maybe_schedule_reply(conversation)
         self.assertTrue(scheduled)
         conversation.refresh_from_db()
         self.assertTrue(conversation.ai_replies_active)
         self.assertTrue(conversation.ai_reply_pending)
+        self.assertIsNotNone(conversation.ai_reply_due_at)
 
-    def test_happy_path_sets_pending_and_schedules_task(self):
+    def test_happy_path_sets_pending_and_due_at(self):
         conversation = self.make_conversation()
-        with patch("message.tasks.send_ai_reply") as mock_task:
+        before = timezone.now()
+        with override_settings(AI_REPLY_DELAY_SECONDS=120):
             scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        after = timezone.now()
 
         self.assertTrue(scheduled)
-        mock_task.apply_async.assert_called_once()
-        _, kwargs = mock_task.apply_async.call_args
-        self.assertIn("countdown", kwargs)
         conversation.refresh_from_db()
         self.assertTrue(conversation.ai_reply_pending)
         self.assertTrue(conversation.ai_reply_task_id)
+        self.assertGreaterEqual(
+            conversation.ai_reply_due_at, before + timedelta(seconds=120)
+        )
+        self.assertLessEqual(
+            conversation.ai_reply_due_at, after + timedelta(seconds=120)
+        )
+
+    def test_branch_reply_delay_override_used_for_due_at(self):
+        branch = Branch.objects.create(
+            name="Lazimpat",
+            address="Lazimpat, Kathmandu",
+            latitude=27.7,
+            longitude=85.3,
+            phone="9800000000",
+        )
+        conversation = self.make_conversation()
+        conversation.branch = branch
+        conversation.save(update_fields=["branch"])
+        BranchAISettings.objects.create(
+            branch=branch, ai_reply_delay_seconds=45
+        )
+
+        before = timezone.now()
+        with override_settings(AI_REPLY_DELAY_SECONDS=120):
+            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        after = timezone.now()
+
+        self.assertTrue(scheduled)
+        conversation.refresh_from_db()
+        self.assertGreaterEqual(
+            conversation.ai_reply_due_at, before + timedelta(seconds=45)
+        )
+        self.assertLessEqual(
+            conversation.ai_reply_due_at, after + timedelta(seconds=45)
+        )
 
 
 class GenerateAndSendTest(MessagingTestCase):
     def test_ai_reply_is_generated_and_sent(self):
-        conversation = self.make_conversation(pending=True)
+        conversation = self.make_conversation(
+            pending=True, due_at=timezone.now() + timedelta(minutes=2)
+        )
         Message.objects.create(
             zernio_message_id="m-1",
             conversation=conversation,
@@ -409,6 +487,36 @@ class GenerateAndSendTest(MessagingTestCase):
         self.assertTrue(outbound.is_ai_generated)
         self.assertIsNone(outbound.sent_by)
 
+        conversation.refresh_from_db()
+        self.assertFalse(conversation.ai_reply_pending)
+        self.assertIsNone(conversation.ai_reply_due_at)
+
+    def test_branch_chat_disabled_skips_generation(self):
+        branch = Branch.objects.create(
+            name="Lazimpat",
+            address="Lazimpat, Kathmandu",
+            latitude=27.7,
+            longitude=85.3,
+            phone="9800000000",
+        )
+        conversation = self.make_conversation(pending=True)
+        conversation.branch = branch
+        conversation.save(update_fields=["branch"])
+        BranchAISettings.objects.create(branch=branch, ai_chat_enabled=False)
+        Message.objects.create(
+            zernio_message_id="m-1",
+            conversation=conversation,
+            content="Do you deliver?",
+            direction="INBOUND",
+        )
+
+        with override_settings(AI_REPLY_ENABLED=True), patch(
+            "message.services.ai_reply_service.OllamaService"
+        ) as mock_ollama_cls:
+            AIReplyService._generate_and_send(conversation.pk)
+
+        mock_ollama_cls.return_value.generate_with_tools.assert_not_called()
+        self.assertFalse(conversation.messages.filter(direction="OUTBOUND").exists())
         conversation.refresh_from_db()
         self.assertFalse(conversation.ai_reply_pending)
 
@@ -452,10 +560,11 @@ class GenerateAndSendTest(MessagingTestCase):
 
 class AIReplyTaskGuardTest(MessagingTestCase):
     def test_new_inbound_revokes_previous_task(self):
-        conversation = self.make_conversation(pending=True, task_id="old-task")
-        with patch("message.tasks.send_ai_reply"), patch(
-            "message.tasks.revoke_task"
-        ) as mock_revoke:
+        old_due_at = timezone.now() - timedelta(seconds=1)
+        conversation = self.make_conversation(
+            pending=True, task_id="old-task", due_at=old_due_at
+        )
+        with patch("message.tasks.revoke_task") as mock_revoke:
             scheduled = AIReplyService.maybe_schedule_reply(conversation)
 
         self.assertTrue(scheduled)
@@ -463,9 +572,13 @@ class AIReplyTaskGuardTest(MessagingTestCase):
         conversation.refresh_from_db()
         self.assertNotEqual(conversation.ai_reply_task_id, "old-task")
         self.assertTrue(conversation.ai_reply_task_id)
+        self.assertGreater(conversation.ai_reply_due_at, old_due_at)
 
     def test_stale_task_does_not_send(self):
-        conversation = self.make_conversation(pending=True, task_id="new-task")
+        due_at = timezone.now() + timedelta(minutes=2)
+        conversation = self.make_conversation(
+            pending=True, task_id="new-task", due_at=due_at
+        )
         Message.objects.create(
             zernio_message_id="m-1",
             conversation=conversation,
@@ -480,9 +593,14 @@ class AIReplyTaskGuardTest(MessagingTestCase):
         conversation.refresh_from_db()
         self.assertTrue(conversation.ai_reply_pending)
         self.assertEqual(conversation.ai_reply_task_id, "new-task")
+        self.assertEqual(conversation.ai_reply_due_at, due_at)
 
     def test_deactivate_revokes_pending_task(self):
-        conversation = self.make_conversation(pending=True, task_id="t1")
+        conversation = self.make_conversation(
+            pending=True,
+            task_id="t1",
+            due_at=timezone.now() + timedelta(minutes=2),
+        )
         with patch("message.tasks.revoke_task") as mock_revoke:
             AIReplyService.deactivate(conversation)
 
@@ -491,10 +609,14 @@ class AIReplyTaskGuardTest(MessagingTestCase):
         self.assertFalse(conversation.ai_reply_pending)
         self.assertFalse(conversation.ai_replies_active)
         self.assertIsNone(conversation.ai_reply_task_id)
+        self.assertIsNone(conversation.ai_reply_due_at)
 
     def test_activate_revokes_pending_task(self):
         conversation = self.make_conversation(
-            active=False, pending=True, task_id="t2"
+            active=False,
+            pending=True,
+            task_id="t2",
+            due_at=timezone.now() + timedelta(minutes=2),
         )
         with patch("message.tasks.revoke_task") as mock_revoke:
             AIReplyService.activate(conversation)
@@ -504,6 +626,205 @@ class AIReplyTaskGuardTest(MessagingTestCase):
         self.assertTrue(conversation.ai_replies_active)
         self.assertFalse(conversation.ai_reply_pending)
         self.assertIsNone(conversation.ai_reply_task_id)
+        self.assertIsNone(conversation.ai_reply_due_at)
+
+    def test_cancel_pending_for_branch_clears_only_that_branch(self):
+        branch = Branch.objects.create(
+            name="Lazimpat",
+            address="Lazimpat, Kathmandu",
+            latitude=27.7,
+            longitude=85.3,
+            phone="9800000000",
+        )
+        other_branch = Branch.objects.create(
+            name="Thamel",
+            address="Thamel, Kathmandu",
+            latitude=27.7,
+            longitude=85.3,
+            phone="9800000001",
+        )
+        due_at = timezone.now() + timedelta(minutes=2)
+        first = self.make_conversation(
+            conversation_id="zc-1", pending=True, task_id="t1", due_at=due_at
+        )
+        second = self.make_conversation(
+            conversation_id="zc-2", pending=True, task_id="t2", due_at=due_at
+        )
+        untouched = self.make_conversation(
+            conversation_id="zc-3", pending=True, task_id="t3", due_at=due_at
+        )
+        first.branch = branch
+        second.branch = branch
+        untouched.branch = other_branch
+        first.save(update_fields=["branch"])
+        second.save(update_fields=["branch"])
+        untouched.save(update_fields=["branch"])
+
+        with patch("message.tasks.revoke_task") as mock_revoke:
+            cancelled = AIReplyService.cancel_pending_for_branch(branch.pk)
+
+        self.assertEqual(cancelled, 2)
+        self.assertEqual(
+            {call.args[0] for call in mock_revoke.call_args_list}, {"t1", "t2"}
+        )
+        first.refresh_from_db()
+        second.refresh_from_db()
+        untouched.refresh_from_db()
+        self.assertFalse(first.ai_reply_pending)
+        self.assertFalse(second.ai_reply_pending)
+        self.assertIsNone(first.ai_reply_task_id)
+        self.assertIsNone(second.ai_reply_task_id)
+        self.assertIsNone(first.ai_reply_due_at)
+        self.assertIsNone(second.ai_reply_due_at)
+        self.assertTrue(untouched.ai_reply_pending)
+        self.assertEqual(untouched.ai_reply_task_id, "t3")
+        self.assertEqual(untouched.ai_reply_due_at, due_at)
+
+
+class DispatchDueRepliesTest(MessagingTestCase):
+    def test_dispatches_due_pending_conversation(self):
+        conversation = self.make_conversation(
+            pending=True,
+            task_id="t1",
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+        with patch.object(AIReplyService, "_generate_and_send") as mock_send:
+            dispatched = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(dispatched, 1)
+        mock_send.assert_called_once_with(conversation.pk, task_id="t1")
+        conversation.refresh_from_db()
+        self.assertGreater(conversation.ai_reply_due_at, timezone.now())
+
+    def test_dispatches_legacy_pending_without_due_at(self):
+        conversation = self.make_conversation(
+            pending=True, task_id="legacy-task", due_at=None
+        )
+        with patch.object(AIReplyService, "_generate_and_send") as mock_send:
+            dispatched = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(dispatched, 1)
+        mock_send.assert_called_once_with(conversation.pk, task_id="legacy-task")
+
+    def test_skips_future_pending_reply(self):
+        due_at = timezone.now() + timedelta(minutes=2)
+        conversation = self.make_conversation(
+            pending=True, task_id="t1", due_at=due_at
+        )
+        with patch.object(AIReplyService, "_generate_and_send") as mock_send:
+            dispatched = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(dispatched, 0)
+        mock_send.assert_not_called()
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.ai_reply_due_at, due_at)
+
+    def test_skips_inactive_and_non_pending_conversations(self):
+        self.make_conversation(
+            conversation_id="zc-1",
+            active=False,
+            pending=True,
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+        self.make_conversation(
+            conversation_id="zc-2",
+            active=True,
+            pending=False,
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+        with patch.object(AIReplyService, "_generate_and_send") as mock_send:
+            dispatched = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(dispatched, 0)
+        mock_send.assert_not_called()
+
+    def test_claimed_reply_is_not_dispatched_twice(self):
+        self.make_conversation(
+            pending=True,
+            task_id="t1",
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+        with patch.object(AIReplyService, "_generate_and_send") as mock_send:
+            first = AIReplyService.dispatch_due_replies()
+            second = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        mock_send.assert_called_once()
+
+    def test_failed_generation_is_retried_after_lease(self):
+        conversation = self.make_conversation(
+            pending=True,
+            task_id="t1",
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+        with patch.object(
+            AIReplyService, "_generate_and_send", side_effect=RuntimeError("boom")
+        ) as mock_send:
+            first = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(first, 1)
+        mock_send.assert_called_once()
+
+        conversation.refresh_from_db()
+        conversation.ai_reply_due_at = timezone.now() - timedelta(seconds=1)
+        conversation.save(update_fields=["ai_reply_due_at"])
+
+        with patch.object(AIReplyService, "_generate_and_send") as retry:
+            second = AIReplyService.dispatch_due_replies()
+
+        self.assertEqual(second, 1)
+        retry.assert_called_once_with(conversation.pk, task_id="t1")
+
+
+class ClearAIReplyQueueCommandTest(MessagingTestCase):
+    @patch("message.management.commands.clear_ai_reply_queue.revoke_task")
+    def test_clears_pending_ai_replies(self, mock_revoke):
+        due_at = timezone.now() + timedelta(minutes=2)
+        conversation = self.make_conversation(
+            pending=True, task_id="t1", due_at=due_at
+        )
+        non_pending = self.make_conversation(
+            conversation_id="zc-2", pending=False, task_id="t2", due_at=due_at
+        )
+
+        with patch(
+            "message.management.commands.clear_ai_reply_queue."
+            "MessagingBroadcaster.broadcast_conversation_updated"
+        ) as mock_broadcast:
+            call_command("clear_ai_reply_queue", stdout=StringIO())
+
+        conversation.refresh_from_db()
+        non_pending.refresh_from_db()
+        self.assertFalse(conversation.ai_reply_pending)
+        self.assertIsNone(conversation.ai_reply_task_id)
+        self.assertIsNone(conversation.ai_reply_due_at)
+        self.assertFalse(non_pending.ai_reply_pending)
+        self.assertEqual(non_pending.ai_reply_task_id, "t2")
+        mock_revoke.assert_called_once_with("t1")
+        mock_broadcast.assert_called_once_with(conversation)
+
+    @patch("message.management.commands.clear_ai_reply_queue.revoke_task")
+    @patch(
+        "message.management.commands.clear_ai_reply_queue.purge_broker_queues",
+        return_value=2,
+    )
+    def test_purge_broker_option(self, mock_purge, mock_revoke):
+        conversation = self.make_conversation(
+            pending=True,
+            task_id="t1",
+            due_at=timezone.now() + timedelta(minutes=2),
+        )
+        output = StringIO()
+
+        call_command("clear_ai_reply_queue", "--purge-broker", stdout=output)
+
+        mock_purge.assert_called_once()
+        mock_revoke.assert_called_once_with("t1")
+        conversation.refresh_from_db()
+        self.assertFalse(conversation.ai_reply_pending)
+        self.assertIsNone(conversation.ai_reply_due_at)
+        self.assertIn("Purged 2", output.getvalue())
 
 
 class HumanTakeoverTest(MessagingTestCase):
@@ -545,6 +866,7 @@ class ResumeAITest(MessagingTestCase):
         data = ConversationSerializer(conversation).data
         self.assertIn("ai_replies_active", data)
         self.assertIn("ai_reply_pending", data)
+        self.assertIn("ai_chat_enabled", data)
         self.assertFalse(data["ai_replies_active"])
         self.assertTrue(data["ai_reply_pending"])
 
@@ -556,7 +878,11 @@ class ResumeAITest(MessagingTestCase):
         self.assertFalse(conversation.ai_reply_pending)
 
     def test_resume_endpoint_reactivates_conversation(self):
-        conversation = self.make_conversation(active=False, pending=True)
+        conversation = self.make_conversation(
+            active=False,
+            pending=True,
+            due_at=timezone.now() + timedelta(minutes=2),
+        )
         response = self.client.post(
             f"/api/conversations/{conversation.pk}/ai/resume/"
         )
@@ -567,15 +893,17 @@ class ResumeAITest(MessagingTestCase):
         conversation.refresh_from_db()
         self.assertTrue(conversation.ai_replies_active)
         self.assertFalse(conversation.ai_reply_pending)
+        self.assertIsNone(conversation.ai_reply_due_at)
 
     def test_inbound_after_resume_schedules_reply(self):
         conversation = self.make_conversation(active=False, pending=False)
         AIReplyService.activate(conversation)
         conversation.refresh_from_db()
-        with patch("message.tasks.send_ai_reply") as mock_task:
-            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        scheduled = AIReplyService.maybe_schedule_reply(conversation)
         self.assertTrue(scheduled)
-        mock_task.apply_async.assert_called_once()
+        conversation.refresh_from_db()
+        self.assertTrue(conversation.ai_reply_pending)
+        self.assertIsNotNone(conversation.ai_reply_due_at)
 
     def test_takeover_endpoint_deactivates_conversation(self):
         conversation = self.make_conversation(active=True, pending=True)
@@ -1561,6 +1889,40 @@ class MessagingBroadcasterTest(MessagingScopingBase):
             f"messaging_unread_account_{self.account_a.id}",
         )
 
+    @patch.object(MessagingBroadcaster, "_send_to_channel_layer")
+    def test_new_message_payload_is_msgpack_safe(self, mock_send):
+        conversation = self.make_conversation(self.account_a)
+        message = Message.objects.create(
+            conversation=conversation, content="Hi", direction="INBOUND"
+        )
+        MessagingBroadcaster.broadcast_new_message(message, conversation)
+
+        _, payload = mock_send.call_args.args
+        unread_counts = payload["data"]["unread_counts"]
+        self.assertEqual(unread_counts, {str(conversation.id): 1})
+        self.assertTrue(
+            all(isinstance(key, str) for key in unread_counts),
+            f"unread_counts keys must be strings: {unread_counts!r}",
+        )
+        # channels_redis uses msgpack with strict_map_key=True, which rejects
+        # integer map keys when the consumer deserializes the message.
+        self.assertEqual(msgpack.unpackb(msgpack.packb(payload)), payload)
+
+    @patch.object(MessagingBroadcaster, "_send_to_channel_layer")
+    def test_unread_counts_update_payload_is_msgpack_safe(self, mock_send):
+        conversation = self.make_conversation(self.account_a)
+        Message.objects.create(
+            conversation=conversation, direction="INBOUND", is_read=False
+        )
+        MessagingBroadcaster.broadcast_unread_counts_updated(
+            business_account_id=self.account_a.id
+        )
+
+        _, payload = mock_send.call_args.args
+        unread_counts = payload["data"]["unread_counts"]
+        self.assertEqual(unread_counts, {str(conversation.id): 1})
+        self.assertEqual(msgpack.unpackb(msgpack.packb(payload)), payload)
+
 
 class AccountSelectorTest(MessagingScopingBase):
     def test_unread_counts_are_scoped_to_account(self):
@@ -1581,7 +1943,7 @@ class AccountSelectorTest(MessagingScopingBase):
         Message.objects.create(conversation=conv_b, direction="INBOUND", is_read=False)
 
         counts = get_unread_counts_for_account(self.account_a.id)
-        self.assertEqual(counts, {conv_a.id: 1})
+        self.assertEqual(counts, {str(conv_a.id): 1})
 
     def test_unread_counts_for_none_is_empty(self):
         self.assertEqual(get_unread_counts_for_account(None), {})
@@ -1689,37 +2051,66 @@ class OrderFeatureFlagsResolverTest(TestCase):
 
     def test_no_branch_uses_env_defaults(self):
         with override_settings(
+            AI_REPLY_ENABLED=True,
+            AI_REPLY_DELAY_SECONDS=45,
             AI_ORDER_CREATION_ENABLED=True,
             AI_ORDER_CANCELLATION_ENABLED=False,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=15,
             AI_ORDER_DEDUP_WINDOW_MINUTES=5,
         ):
             flags = get_order_feature_flags(None)
+        self.assertTrue(flags.chat_enabled)
+        self.assertEqual(flags.reply_delay_seconds, 45)
         self.assertTrue(flags.creation_enabled)
         self.assertFalse(flags.cancellation_enabled)
         self.assertEqual(flags.cancellation_window_minutes, 15)
         self.assertEqual(flags.dedup_window_minutes, 5)
 
     def test_branch_without_row_uses_env_defaults(self):
-        with override_settings(AI_ORDER_CREATION_ENABLED=True):
+        with override_settings(
+            AI_REPLY_ENABLED=False,
+            AI_ORDER_CREATION_ENABLED=True,
+        ):
             flags = get_order_feature_flags(self.branch.pk)
+        self.assertFalse(flags.chat_enabled)
         self.assertTrue(flags.creation_enabled)
+
+    def test_branch_row_can_disable_chat(self):
+        BranchAISettings.objects.create(branch=self.branch, ai_chat_enabled=False)
+        with override_settings(AI_REPLY_ENABLED=True):
+            flags = get_order_feature_flags(self.branch.pk)
+        self.assertFalse(flags.chat_enabled)
+
+    def test_null_chat_inherits_env_default(self):
+        BranchAISettings.objects.create(branch=self.branch)
+        with override_settings(AI_REPLY_ENABLED=True):
+            flags = get_order_feature_flags(self.branch.pk)
+        self.assertTrue(flags.chat_enabled)
+
+    def test_global_chat_kill_switch_cannot_be_overridden(self):
+        BranchAISettings.objects.create(branch=self.branch, ai_chat_enabled=True)
+        with override_settings(AI_REPLY_ENABLED=False):
+            flags = get_order_feature_flags(self.branch.pk)
+        self.assertFalse(flags.chat_enabled)
 
     def test_branch_row_overrides_env_defaults(self):
         BranchAISettings.objects.create(
             branch=self.branch,
+            ai_reply_delay_seconds=30,
             ai_order_creation_enabled=True,
             ai_order_cancellation_enabled=True,
             ai_order_cancellation_window_minutes=30,
             ai_order_dedup_window_minutes=2,
         )
         with override_settings(
+            AI_REPLY_DELAY_SECONDS=120,
             AI_ORDER_CREATION_ENABLED=False,
             AI_ORDER_CANCELLATION_ENABLED=False,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=10,
             AI_ORDER_DEDUP_WINDOW_MINUTES=10,
         ):
             flags = get_order_feature_flags(self.branch.pk)
+        self.assertEqual(flags.reply_delay_seconds, 30)
         self.assertTrue(flags.creation_enabled)
         self.assertTrue(flags.cancellation_enabled)
         self.assertEqual(flags.cancellation_window_minutes, 30)
@@ -1730,11 +2121,13 @@ class OrderFeatureFlagsResolverTest(TestCase):
             branch=self.branch, ai_order_creation_enabled=True
         )
         with override_settings(
+            AI_REPLY_DELAY_SECONDS=90,
             AI_ORDER_CREATION_ENABLED=False,
             AI_ORDER_CANCELLATION_ENABLED=True,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=12,
         ):
             flags = get_order_feature_flags(self.branch.pk)
+        self.assertEqual(flags.reply_delay_seconds, 90)
         self.assertTrue(flags.creation_enabled)
         self.assertTrue(flags.cancellation_enabled)
         self.assertEqual(flags.cancellation_window_minutes, 12)
@@ -1875,6 +2268,8 @@ class ConversationOrderSettingsAPITest(TestCase):
             self._url(),
             data=json.dumps(
                 {
+                    "ai_chat_enabled": True,
+                    "ai_reply_delay_seconds": 45,
                     "ai_order_creation_enabled": True,
                     "ai_order_cancellation_enabled": True,
                     "ai_order_cancellation_window_minutes": 25,
@@ -1885,14 +2280,89 @@ class ConversationOrderSettingsAPITest(TestCase):
             **self.auth_headers,
         )
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ai_chat_enabled"])
+        self.assertEqual(response.data["ai_reply_delay_seconds"], 45)
         self.assertTrue(response.data["ai_order_creation_enabled"])
         self.assertTrue(response.data["ai_order_cancellation_enabled"])
         self.assertEqual(response.data["ai_order_cancellation_window_minutes"], 25)
         self.assertEqual(response.data["ai_order_dedup_window_minutes"], 3)
 
         settings_row = BranchAISettings.objects.get(branch=self.branch)
+        self.assertTrue(settings_row.ai_chat_enabled)
+        self.assertEqual(settings_row.ai_reply_delay_seconds, 45)
         self.assertTrue(settings_row.ai_order_creation_enabled)
         self.assertEqual(settings_row.ai_order_cancellation_window_minutes, 25)
+
+    def test_null_clears_reply_delay_override(self):
+        BranchAISettings.objects.create(
+            branch=self.branch, ai_reply_delay_seconds=30
+        )
+        self._auth(self.admin)
+        with override_settings(AI_REPLY_DELAY_SECONDS=120):
+            response = self.client.post(
+                self._url(),
+                data=json.dumps({"ai_reply_delay_seconds": None}),
+                content_type="application/json",
+                **self.auth_headers,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["ai_reply_delay_seconds"], 120)
+        settings_row = BranchAISettings.objects.get(branch=self.branch)
+        self.assertIsNone(settings_row.ai_reply_delay_seconds)
+
+    def test_negative_reply_delay_is_rejected(self):
+        self._auth(self.admin)
+        response = self.client.post(
+            self._url(),
+            data=json.dumps({"ai_reply_delay_seconds": -1}),
+            content_type="application/json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_disabling_chat_cancels_pending_replies(self):
+        self.conversation.ai_reply_pending = True
+        self.conversation.ai_reply_task_id = "t1"
+        self.conversation.ai_reply_due_at = timezone.now() + timedelta(minutes=2)
+        self.conversation.save(
+            update_fields=[
+                "ai_reply_pending",
+                "ai_reply_task_id",
+                "ai_reply_due_at",
+            ]
+        )
+        self._auth(self.admin)
+
+        with patch("message.tasks.revoke_task") as mock_revoke:
+            response = self.client.post(
+                self._url(),
+                data=json.dumps({"ai_chat_enabled": False}),
+                content_type="application/json",
+                **self.auth_headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["ai_chat_enabled"])
+        mock_revoke.assert_called_once_with("t1")
+        self.conversation.refresh_from_db()
+        self.assertFalse(self.conversation.ai_reply_pending)
+        self.assertIsNone(self.conversation.ai_reply_task_id)
+        self.assertIsNone(self.conversation.ai_reply_due_at)
+
+    def test_null_clears_chat_override(self):
+        BranchAISettings.objects.create(branch=self.branch, ai_chat_enabled=False)
+        self._auth(self.admin)
+        with override_settings(AI_REPLY_ENABLED=True):
+            response = self.client.post(
+                self._url(),
+                data=json.dumps({"ai_chat_enabled": None}),
+                content_type="application/json",
+                **self.auth_headers,
+            )
+        self.assertEqual(response.status_code, 200)
+        settings_row = BranchAISettings.objects.get(branch=self.branch)
+        self.assertIsNone(settings_row.ai_chat_enabled)
+        self.assertTrue(response.data["ai_chat_enabled"])
 
     def test_partial_update_only_changes_provided_fields(self):
         BranchAISettings.objects.create(

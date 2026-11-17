@@ -121,6 +121,11 @@ AI_ORDER_CANCELLATION_WINDOW_MINUTES = int(
 # During this window a human operator can reply/take over, which cancels the
 # scheduled AI reply. Every new inbound message resets the timer.
 AI_REPLY_DELAY_SECONDS = int(os.getenv("AI_REPLY_DELAY_SECONDS", "120"))
+# A due reply is leased in the database while it is being generated. If the
+# worker crashes mid-reply, the lease expires and a later dispatcher run retries.
+AI_REPLY_DISPATCH_LEASE_SECONDS = int(
+    os.getenv("AI_REPLY_DISPATCH_LEASE_SECONDS", "300")
+)
 
 DATABASES = {
     "default": {
@@ -273,6 +278,14 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_IGNORE_RESULT = True
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-due-ai-replies": {
+        "task": "message.dispatch_due_ai_replies",
+        "schedule": float(
+            os.getenv("AI_REPLY_DISPATCH_INTERVAL_SECONDS", "15")
+        ),
+    },
+}
 
 if REDIS_URL:
     CHANNEL_LAYERS = {

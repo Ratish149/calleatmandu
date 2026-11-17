@@ -36,7 +36,10 @@ class Command(BaseCommand):
             queryset = queryset.filter(ai_replies_active=False)
 
         updated = queryset.update(
-            ai_replies_active=True, ai_reply_pending=False, ai_reply_task_id=None
+            ai_replies_active=True,
+            ai_reply_pending=False,
+            ai_reply_task_id=None,
+            ai_reply_due_at=None,
         )
         self.stdout.write(
             self.style.SUCCESS(

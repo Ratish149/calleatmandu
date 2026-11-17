@@ -1,13 +1,19 @@
 import logging
 import re
+from datetime import timedelta
 from typing import List, Optional
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import connections, transaction
+from django.db.models import Q
+from django.utils import timezone
 
 from message.models import Conversation
-from message.services.ai_order_settings import get_order_feature_flags
+from message.services.ai_order_settings import (
+    get_order_feature_flags,
+    resolve_conversation_branch_id,
+)
 from message.services.ai_tools import (
     execute_tool,
     get_branch_info,
@@ -165,17 +171,21 @@ class AIReplyService:
     def maybe_schedule_reply(cls, conversation: Conversation) -> bool:
         """Schedule a delayed AI reply, resetting any reply already waiting.
 
-        Inbound messages always auto-reactivate AI replies (inbound overrides
+        Inbound messages normally auto-reactivate AI replies (inbound overrides
         manual takeover). A new inbound message while a reply is already pending
         reschedules it, giving the operator a fresh full window to respond.
+        AI chat must be enabled globally and for the conversation's branch.
         """
-        if not getattr(settings, "AI_REPLY_ENABLED", True):
+        branch_id = resolve_conversation_branch_id(conversation)
+        flags = get_order_feature_flags(branch_id)
+        if not flags.chat_enabled:
             return False
 
         # Imported lazily to avoid a circular import at module load time.
-        from message.tasks import revoke_task, send_ai_reply
+        from message.tasks import revoke_task
 
-        delay = getattr(settings, "AI_REPLY_DELAY_SECONDS", 120)
+        delay = flags.reply_delay_seconds
+        due_at = timezone.now() + timedelta(seconds=delay)
 
         with transaction.atomic():
             previous = (
@@ -193,26 +203,12 @@ class AIReplyService:
                 ai_replies_active=True,
                 ai_reply_pending=True,
                 ai_reply_task_id=task_id,
+                ai_reply_due_at=due_at,
             )
 
-        # Cancel the task we just replaced, if any.
+        # Cancel any legacy countdown task we just replaced.
         if previous_task_id:
             revoke_task(previous_task_id)
-
-        try:
-            send_ai_reply.apply_async(
-                args=[conversation.pk, task_id],
-                task_id=task_id,
-                countdown=delay,
-            )
-        except Exception:
-            Conversation.objects.filter(
-                pk=conversation.pk, ai_reply_task_id=task_id
-            ).update(ai_reply_pending=False, ai_reply_task_id=None)
-            logger.exception(
-                "Failed to schedule AI reply for conversation %s", conversation.pk
-            )
-            return False
 
         try:
             conversation.refresh_from_db()
@@ -226,6 +222,57 @@ class AIReplyService:
         return True
 
     @classmethod
+    def dispatch_due_replies(cls, limit: int = 100) -> int:
+        """Send AI replies whose database-backed delay has elapsed.
+
+        The due time lives in the database, so a stopped worker or lost broker
+        message cannot silently drop a reply. Each due conversation is claimed
+        with an atomic lease update before generation; if the worker dies mid
+        reply, the lease expires and a later dispatch run retries it.
+        """
+        now = timezone.now()
+        lease_seconds = int(
+            getattr(settings, "AI_REPLY_DISPATCH_LEASE_SECONDS", 300)
+        )
+        lease_until = now + timedelta(seconds=lease_seconds)
+
+        due = list(
+            Conversation.objects.filter(
+                Q(ai_reply_due_at__lte=now) | Q(ai_reply_due_at__isnull=True),
+                ai_reply_pending=True,
+                ai_replies_active=True,
+            )
+            .order_by("ai_reply_due_at", "pk")
+            .values_list("pk", "ai_reply_task_id")[:limit]
+        )
+
+        claimed = []
+        for conversation_id, task_id in due:
+            updated = (
+                Conversation.objects.filter(
+                    pk=conversation_id,
+                    ai_reply_task_id=task_id,
+                    ai_reply_pending=True,
+                    ai_replies_active=True,
+                )
+                .filter(Q(ai_reply_due_at__lte=now) | Q(ai_reply_due_at__isnull=True))
+                .update(ai_reply_due_at=lease_until)
+            )
+            if updated:
+                claimed.append((conversation_id, task_id))
+
+        for conversation_id, task_id in claimed:
+            try:
+                cls._generate_and_send(conversation_id, task_id=task_id)
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch AI reply for conversation %s",
+                    conversation_id,
+                )
+
+        return len(claimed)
+
+    @classmethod
     def deactivate(cls, conversation: Conversation) -> None:
         """Human takeover: cancel any pending AI reply and stop future ones."""
         previous_task_id = (
@@ -237,6 +284,7 @@ class AIReplyService:
             ai_replies_active=False,
             ai_reply_pending=False,
             ai_reply_task_id=None,
+            ai_reply_due_at=None,
         )
         if previous_task_id:
             from message.tasks import revoke_task
@@ -250,6 +298,60 @@ class AIReplyService:
                 "Failed to broadcast conversation updated after deactivating for conversation %s",
                 conversation.pk,
             )
+
+    @classmethod
+    def cancel_pending_for_branch(cls, branch_id) -> int:
+        """Cancel scheduled AI replies for every conversation in a branch.
+
+        Branch resolution matches ``resolve_conversation_branch_id``: a direct
+        conversation branch takes precedence, otherwise the business account's
+        branch is used.
+        """
+        pending = list(
+            Conversation.objects.filter(
+                Q(branch_id=branch_id)
+                | Q(
+                    branch_id__isnull=True,
+                    business_account__branch_id=branch_id,
+                ),
+                ai_reply_pending=True,
+            )
+        )
+        if not pending:
+            return 0
+
+        from message.tasks import revoke_task
+
+        task_ids = [
+            conversation.ai_reply_task_id
+            for conversation in pending
+            if conversation.ai_reply_task_id
+        ]
+        Conversation.objects.filter(
+            pk__in=[conversation.pk for conversation in pending]
+        ).update(
+            ai_reply_pending=False,
+            ai_reply_task_id=None,
+            ai_reply_due_at=None,
+        )
+
+        for task_id in task_ids:
+            revoke_task(task_id)
+
+        for conversation in pending:
+            conversation.ai_reply_pending = False
+            conversation.ai_reply_task_id = None
+            conversation.ai_reply_due_at = None
+            try:
+                MessagingBroadcaster.broadcast_conversation_updated(conversation)
+            except Exception:
+                logger.exception(
+                    "Failed to broadcast conversation update after cancelling "
+                    "pending AI replies for conversation %s",
+                    conversation.pk,
+                )
+
+        return len(pending)
 
     @classmethod
     def activate(cls, conversation: Conversation) -> None:
@@ -267,6 +369,7 @@ class AIReplyService:
             ai_replies_active=True,
             ai_reply_pending=False,
             ai_reply_task_id=None,
+            ai_reply_due_at=None,
         )
         if previous_task_id:
             from message.tasks import revoke_task
@@ -296,6 +399,15 @@ class AIReplyService:
                 logger.info(
                     "AI reply task %s for conversation %s is no longer current; skipping",
                     task_id,
+                    conversation_id,
+                )
+                return
+
+            branch_id = resolve_conversation_branch_id(conversation)
+            if not get_order_feature_flags(branch_id).chat_enabled:
+                logger.info(
+                    "AI chat is disabled for branch %s; skipping reply for conversation %s",
+                    branch_id,
                     conversation_id,
                 )
                 return
@@ -335,7 +447,11 @@ class AIReplyService:
         )
         if task_id is not None:
             queryset = queryset.filter(ai_reply_task_id=task_id)
-        queryset.update(ai_reply_pending=False, ai_reply_task_id=None)
+        queryset.update(
+            ai_reply_pending=False,
+            ai_reply_task_id=None,
+            ai_reply_due_at=None,
+        )
 
     @classmethod
     def _send_if_still_pending(
@@ -352,6 +468,15 @@ class AIReplyService:
         if not still_pending.exists():
             logger.info(
                 "AI reply for conversation %s cancelled (human took over)",
+                conversation.pk,
+            )
+            return
+
+        branch_id = resolve_conversation_branch_id(conversation)
+        if not get_order_feature_flags(branch_id).chat_enabled:
+            logger.info(
+                "AI chat is disabled for branch %s; cancelling reply for conversation %s",
+                branch_id,
                 conversation.pk,
             )
             return

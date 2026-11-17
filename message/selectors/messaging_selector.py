@@ -62,7 +62,7 @@ def get_unread_counts_for_branch(
         .annotate(unread_count=Count("id"))
     )
 
-    return {row["conversation_id"]: row["unread_count"] for row in rows}
+    return {str(row["conversation_id"]): row["unread_count"] for row in rows}
 
 
 def get_conversations_for_account(
@@ -102,7 +102,7 @@ def get_unread_counts_for_account(
         .annotate(unread_count=Count("id"))
     )
 
-    return {row["conversation_id"]: row["unread_count"] for row in rows}
+    return {str(row["conversation_id"]): row["unread_count"] for row in rows}
 
 
 def get_linked_accounts_for_branch(

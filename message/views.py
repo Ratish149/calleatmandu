@@ -23,7 +23,10 @@ from message.serializers import (
     OAuthConnectURLQuerySerializer,
     SendMessageSerializer,
 )
-from message.services.ai_order_settings import resolve_conversation_branch_id
+from message.services.ai_order_settings import (
+    get_order_feature_flags,
+    resolve_conversation_branch_id,
+)
 from message.services.ai_reply_service import AIReplyService
 from message.services.messaging_service import MessagingService
 
@@ -194,7 +197,7 @@ class ConversationTakeoverAIAPIView(APIView):
 
 
 class ConversationOrderSettingsAPIView(APIView):
-    """POST /api/conversations/<id>/ai/order-settings/ Update the branch's AI order capabilities."""
+    """POST /api/conversations/<id>/ai/order-settings/ Update branch AI settings."""
 
     permission_classes = [IsAdminRole]
 
@@ -226,6 +229,9 @@ class ConversationOrderSettingsAPIView(APIView):
         for field, value in serializer.validated_data.items():
             setattr(branch_settings, field, value)
         branch_settings.save()
+
+        if not get_order_feature_flags(target_branch_id).chat_enabled:
+            AIReplyService.cancel_pending_for_branch(target_branch_id)
 
         conversation.refresh_from_db()
         return Response(

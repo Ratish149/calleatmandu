@@ -81,6 +81,7 @@ class Conversation(BaseModel):
     ai_reply_task_id = models.CharField(
         max_length=255, blank=True, null=True, db_index=True
     )
+    ai_reply_due_at = models.DateTimeField(blank=True, null=True, db_index=True)
 
     class Meta:
         db_table = "conversations"
@@ -164,7 +165,7 @@ class Attachment(models.Model):
 
 
 class BranchAISettings(BaseModel):
-    """Per-branch overrides for the AI order capabilities.
+    """Per-branch overrides for AI chat and order capabilities.
 
     Each field is nullable; a ``None`` value means "inherit the environment
     default" defined in ``settings``. A row is only created when a branch
@@ -176,6 +177,8 @@ class BranchAISettings(BaseModel):
         on_delete=models.CASCADE,
         related_name="ai_settings",
     )
+    ai_chat_enabled = models.BooleanField(null=True, blank=True)
+    ai_reply_delay_seconds = models.PositiveIntegerField(null=True, blank=True)
     ai_order_creation_enabled = models.BooleanField(null=True, blank=True)
     ai_order_cancellation_enabled = models.BooleanField(null=True, blank=True)
     ai_order_cancellation_window_minutes = models.PositiveIntegerField(

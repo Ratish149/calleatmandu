@@ -60,6 +60,8 @@ class ConversationSerializer(serializers.ModelSerializer):
     )
     latest_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    ai_chat_enabled = serializers.SerializerMethodField()
+    ai_reply_delay_seconds = serializers.SerializerMethodField()
     ai_order_creation_enabled = serializers.SerializerMethodField()
     ai_order_cancellation_enabled = serializers.SerializerMethodField()
     ai_order_cancellation_window_minutes = serializers.SerializerMethodField()
@@ -81,6 +83,8 @@ class ConversationSerializer(serializers.ModelSerializer):
             "business_account",
             "ai_replies_active",
             "ai_reply_pending",
+            "ai_chat_enabled",
+            "ai_reply_delay_seconds",
             "ai_order_creation_enabled",
             "ai_order_cancellation_enabled",
             "ai_order_cancellation_window_minutes",
@@ -112,6 +116,12 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_unread_count(self, obj):
         return obj.messages.filter(direction="INBOUND", is_read=False).count()
 
+    def get_ai_chat_enabled(self, obj):
+        return self._order_flags(obj).chat_enabled
+
+    def get_ai_reply_delay_seconds(self, obj):
+        return self._order_flags(obj).reply_delay_seconds
+
     def get_ai_order_creation_enabled(self, obj):
         return self._order_flags(obj).creation_enabled
 
@@ -126,12 +136,16 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 
 class ConversationOrderSettingsSerializer(serializers.Serializer):
-    """Partial update for the per-branch AI order capabilities.
+    """Partial update for the per-branch AI chat and order capabilities.
 
     Only the fields provided are applied. Sending ``null`` clears an override so
     the branch falls back to the environment default.
     """
 
+    ai_chat_enabled = serializers.BooleanField(required=False, allow_null=True)
+    ai_reply_delay_seconds = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0
+    )
     ai_order_creation_enabled = serializers.BooleanField(
         required=False, allow_null=True
     )

@@ -21,9 +21,10 @@ services:
     container_name: calleatmandu_web
     command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 calleatmandu.asgi:application"
     environment:
-      # Set REDIS_URL in the environment (e.g. Coolify) to point at a managed
-      # Redis; otherwise the bundled redis service above is used.
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # COMPOSE_REDIS_URL points at a managed Redis; otherwise the bundled
+      # redis service above is used. Use a separate name so the local .env
+      # REDIS_URL (localhost) does not leak into the containers.
+      - REDIS_URL=${COMPOSE_REDIS_URL:-redis://redis:6379/0}
     depends_on:
       redis:
         condition: service_healthy
@@ -35,11 +36,13 @@ services:
   worker:
     build: .
     container_name: calleatmandu_worker
+    # WARNING: with SQLite, web and worker containers have separate databases.
+    # Use Postgres (or a shared volume) before enabling this worker in production.
     # --pool=solo + a single concurrency keeps SQLite writer contention minimal.
     # Switch to the default prefork pool once the project runs on Postgres.
-    command: celery -A calleatmandu worker -l info
+    command: celery -A calleatmandu worker -l info --pool=solo --concurrency=1
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_URL=${COMPOSE_REDIS_URL:-redis://redis:6379/0}
     depends_on:
       redis:
         condition: service_healthy
@@ -47,6 +50,20 @@ services:
       - calleatmandu_media_data:/app/media
     networks:
       - coolify
+    restart: unless-stopped
+
+  beat:
+    build: .
+    container_name: calleatmandu_beat
+    command: celery -A calleatmandu beat -l info --schedule=/tmp/celerybeat-schedule
+    environment:
+      - REDIS_URL=${COMPOSE_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - coolify
+    restart: unless-stopped
 
 networks:
   coolify:

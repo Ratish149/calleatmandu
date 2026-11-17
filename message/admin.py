@@ -43,13 +43,19 @@ class MessageInline(TabularInline):
 class BranchAISettingsAdmin(ModelAdmin):
     list_display = (
         "branch",
+        "ai_chat_enabled",
+        "ai_reply_delay_seconds",
         "ai_order_creation_enabled",
         "ai_order_cancellation_enabled",
         "ai_order_cancellation_window_minutes",
         "ai_order_dedup_window_minutes",
         "updated_at",
     )
-    list_filter = ("ai_order_creation_enabled", "ai_order_cancellation_enabled")
+    list_filter = (
+        "ai_chat_enabled",
+        "ai_order_creation_enabled",
+        "ai_order_cancellation_enabled",
+    )
 
 
 @admin.register(Conversation)
@@ -62,6 +68,7 @@ class ConversationAdmin(ModelAdmin):
         "business_account",
         "ai_replies_active",
         "ai_reply_pending",
+        "ai_reply_due_at",
         "updated_at",
     )
     list_filter = ("platform", "branch", "ai_replies_active", "ai_reply_pending")
