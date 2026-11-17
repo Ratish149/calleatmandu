@@ -22,12 +22,16 @@ def get_cash_balance_summary(
     Balance summary selector.
 
     Formulas:
-      total_cash_amount   = SUM(cash_expenditure.cash_amount)
-                            + SUM(credit_settlement.cash_settled)   ← settled credits count as cash
-      total_online_amount = SUM(cash_expenditure.online_amount)
-                            + SUM(credit_settlement.online_settled) ← settled credits count as online
-      total_credit_amount = SUM(cash_expenditure.credit_amount)     ← total credit ever given
-      available_balance   = total_cash_amount + total_online_amount - vendor_paid
+      total_cash_amount             = SUM(cash_expenditure.cash_amount)  [full cash collected]
+      total_online_amount           = SUM(cash_expenditure.online_amount)  [full online collected]
+      total_vendor_cash_paid        = SUM(vendor_transaction.amount WHERE payment_method=CASH)
+      total_vendor_online_paid      = SUM(vendor_transaction.amount WHERE payment_method=ONLINE)
+      total_cash_available_amount   = total_cash_amount + credit_settled_cash - total_vendor_cash_paid
+      total_online_available_amount = total_online_amount + credit_settled_online - total_vendor_online_paid
+      total_credit_amount           = SUM(cash_expenditure.credit_amount)
+      total_delivery_charge         = SUM(cash_expenditure.delivery_charge)
+      total_vendor_paid_amount      = total_vendor_cash_paid + total_vendor_online_paid
+      available_balance             = total_cash_available_amount + total_online_available_amount - total_delivery_charge
     """
     if queryset is None:
         queryset = CashExpenditure.objects.all()
@@ -73,7 +77,25 @@ def get_cash_balance_summary(
         )
 
     vendor_agg = vendor_transaction_queryset.aggregate(
-        total_vendor_paid_amount=Coalesce(Sum("amount"), 0.0)
+        total_vendor_paid_amount=Coalesce(Sum("amount"), 0.0),
+        total_vendor_cash_paid=Coalesce(
+            Sum(
+                "amount",
+                filter=Q(
+                    payment_method__iexact=VendorTransaction.PaymentMethod.CASH
+                ),
+            ),
+            0.0,
+        ),
+        total_vendor_online_paid=Coalesce(
+            Sum(
+                "amount",
+                filter=Q(
+                    payment_method__iexact=VendorTransaction.PaymentMethod.ONLINE
+                ),
+            ),
+            0.0,
+        ),
     )
 
     # --- Credit settlements scoped to this period's cash entries ---
@@ -95,26 +117,58 @@ def get_cash_balance_summary(
     settled_cash = round(float(settlement_agg["settled_cash"] or 0.0), 2)
     settled_online = round(float(settlement_agg["settled_online"] or 0.0), 2)
 
-    # Settled credits roll into the respective collected buckets
-    total_cash_amount = round(base_cash + settled_cash, 2)
-    total_online_amount = round(base_online + settled_online, 2)
-    total_credit_amount = round(float(agg["total_credit_amount"] or 0.0), 2)
-    total_delivery_charge = round(float(agg["total_delivery_charge"] or 0.0), 2)
     total_vendor_paid_amount = round(
         float(vendor_agg["total_vendor_paid_amount"] or 0.0), 2
     )
+    total_vendor_cash_paid = round(
+        float(vendor_agg["total_vendor_cash_paid"] or 0.0), 2
+    )
+    total_vendor_online_paid = round(
+        float(vendor_agg["total_vendor_online_paid"] or 0.0), 2
+    )
+
+    # Ensure any non-cash payments not yet updated to ONLINE are safely included in online total
+    remaining_non_cash = round(
+        total_vendor_paid_amount - (total_vendor_cash_paid + total_vendor_online_paid),
+        2,
+    )
+    if remaining_non_cash > 0:
+        total_vendor_online_paid = round(
+            total_vendor_online_paid + remaining_non_cash, 2
+        )
+
+    # Full gross amounts collected from entries
+    total_cash_amount = base_cash
+    total_online_amount = base_online
+
+    # Available amounts after adding credit settlements and deducting vendor payments in their respective modes
+    total_cash_available_amount = round(
+        base_cash + settled_cash - total_vendor_cash_paid, 2
+    )
+    total_online_available_amount = round(
+        base_online + settled_online - total_vendor_online_paid, 2
+    )
+
+    total_credit_amount = round(float(agg["total_credit_amount"] or 0.0), 2)
+    total_delivery_charge = round(float(agg["total_delivery_charge"] or 0.0), 2)
 
     total_available_balance = round(
-        total_cash_amount + total_online_amount - total_vendor_paid_amount,
+        total_cash_available_amount
+        + total_online_available_amount
+        - total_delivery_charge,
         2,
     )
 
     return {
         "total_cash_amount": total_cash_amount,
         "total_online_amount": total_online_amount,
+        "total_cash_available_amount": total_cash_available_amount,
+        "total_online_available_amount": total_online_available_amount,
         "total_credit_amount": total_credit_amount,
         "total_delivery_charge": total_delivery_charge,
         "total_vendor_paid_amount": total_vendor_paid_amount,
+        "total_vendor_cash_paid": total_vendor_cash_paid,
+        "total_vendor_online_paid": total_vendor_online_paid,
         "total_available_balance": total_available_balance,
         "available_balance": total_available_balance,
         "total_entries": agg["total_entries"],

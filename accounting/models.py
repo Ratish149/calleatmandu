@@ -92,6 +92,7 @@ class VendorTransaction(BaseModel):
 
     class PaymentMethod(models.TextChoices):
         CASH = "CASH", "Cash"
+        ONLINE = "ONLINE", "Online"
         BANK_TRANSFER = "BANK_TRANSFER", "Bank Transfer"
         ESEWA = "ESEWA", "eSewa"
         KHALTI = "KHALTI", "Khalti"

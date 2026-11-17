@@ -143,13 +143,16 @@ class CashExpenditureRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class CashBalanceSummaryAPIView(GenericAPIView):
     """
     Dedicated API view to retrieve comprehensive cash flow balance summary:
-    - total_cash_amount: Sum of all physical cash amounts.
-    - total_online_amount: Sum of all digital/online payment amounts.
+    - total_cash_amount: Full/gross cash collected in Cash & Expenditure entries.
+    - total_online_amount: Full/gross online amount collected in Cash & Expenditure entries.
+    - total_cash_available_amount: Available cash after adding cash credit settlements and deducting cash vendor payments.
+    - total_online_available_amount: Available online after adding online credit settlements and deducting online vendor payments.
     - total_delivery_charge: Sum of all delivery charge expenses.
-    - total_vendor_paid_amount: Sum of all payments made to vendors (vendor payment amount).
-    - vendor_payment_amount: Alias for total_vendor_paid_amount.
+    - total_vendor_paid_amount: Sum of all payments made to vendors.
+    - total_vendor_cash_paid: Sum of payments made to vendors in cash.
+    - total_vendor_online_paid: Sum of payments made to vendors via online/bank transfer.
     - total_available_balance: Net available balance:
-      (total_cash_amount + total_online_amount - total_delivery_charge - total_vendor_paid_amount).
+      (total_cash_available_amount + total_online_available_amount - total_delivery_charge).
     - available_balance: Alias for total_available_balance.
     Filters:
     - start_date (YYYY-MM-DD)

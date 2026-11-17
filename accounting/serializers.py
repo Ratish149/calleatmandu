@@ -127,17 +127,29 @@ class CashBalanceSummarySerializer(serializers.Serializer):
     """
     Balance summary serializer.
 
-    total_cash_amount   includes settled credit cash payments.
-    total_online_amount includes settled credit online payments.
-    total_credit_amount is the raw total credit given (for reference).
-    available_balance   = cash + online - vendor_paid
+    total_cash_amount             = full cash amount collected in entries.
+    total_online_amount           = full online amount collected in entries.
+    total_cash_available_amount   = full cash + credit settled via cash - vendor payments paid in cash.
+    total_online_available_amount = full online + credit settled via online - vendor payments paid online.
+    total_credit_amount           = total credit amount given across entries in this period.
+    total_delivery_charge         = sum of delivery charges.
+    total_vendor_paid_amount      = sum of all payments made to vendors.
+    total_vendor_cash_paid        = sum of vendor payments paid in cash.
+    total_vendor_online_paid      = sum of vendor payments paid online.
+    available_balance             = total_cash_available_amount + total_online_available_amount - total_delivery_charge.
     """
 
     total_cash_amount = serializers.FloatField(
-        help_text="Sum of collected cash + credit settled via cash."
+        help_text="Full/gross physical cash amount collected in Cash & Expenditure entries."
     )
     total_online_amount = serializers.FloatField(
-        help_text="Sum of collected online + credit settled via online."
+        help_text="Full/gross online amount collected in Cash & Expenditure entries."
+    )
+    total_cash_available_amount = serializers.FloatField(
+        help_text="Available cash amount: full cash + credit settled via cash - vendor payments paid in cash."
+    )
+    total_online_available_amount = serializers.FloatField(
+        help_text="Available online amount: full online + credit settled via online - vendor payments paid online."
     )
     total_credit_amount = serializers.FloatField(
         default=0.0,
@@ -150,8 +162,18 @@ class CashBalanceSummarySerializer(serializers.Serializer):
         default=0.0,
         help_text="Sum of all payments made to vendors.",
     )
+    total_vendor_cash_paid = serializers.FloatField(
+        default=0.0,
+        required=False,
+        help_text="Sum of payments made to vendors in cash.",
+    )
+    total_vendor_online_paid = serializers.FloatField(
+        default=0.0,
+        required=False,
+        help_text="Sum of payments made to vendors via online/bank transfer.",
+    )
     total_available_balance = serializers.FloatField(
-        help_text="Net collected balance (cash + online - vendor_paid)."
+        help_text="Net available balance (total_cash_available_amount + total_online_available_amount - total_delivery_charge)."
     )
     available_balance = serializers.FloatField(
         help_text="Alias for total_available_balance."
