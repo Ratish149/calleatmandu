@@ -107,10 +107,12 @@ def get_orders_for_user_queryset(user, status_filter=None):
         If the rider has no assigned branch, returns all READY_FOR_PICKUP orders.
       - Without any status filter, or with filters like OUT_FOR_DELIVERY, DELIVERED, etc.:
         returns only their own assigned orders (assigned_to_rider=user).
+    - If user is kitchen:
+      - Returns all confirmed orders that are not draft/save-only (only_save=False, status=CONFIRMED).
     - If user has an assigned branch (user.branch_id):
       - If user is admin (or superuser): returns orders belonging to user.branch PLUS any orders linked to that admin (created_by or user).
       - If user is customer: returns only orders placed by this user.
-      - If user is operational branch staff (kitchen, reception, etc.): returns orders belonging to user.branch.
+      - If user is operational branch staff (reception, etc.): returns orders belonging to user.branch.
     - If user does not have an assigned branch:
       - If user is superuser: returns all orders.
       - If user is admin: returns orders linked to that admin (created_by or user).
@@ -159,6 +161,12 @@ def get_orders_for_user_queryset(user, status_filter=None):
             return base_queryset.filter(status=Order.OrderStatus.READY_FOR_PICKUP)
 
         return base_queryset.filter(assigned_to_rider=user)
+
+    # ── Kitchen-specific scoping ──────────────────────────────────────────────
+    if user_role == "kitchen":
+        return base_queryset.filter(
+            only_save=False,
+        )
 
     # ── Scoping for other roles with an assigned branch ───────────────────────
     if branch_id:
