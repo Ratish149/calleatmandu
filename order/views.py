@@ -56,7 +56,21 @@ class OrderListCreateAPIView(ListCreateAPIView):
     search_fields = ["customer_name", "phone_number", "order_number", "barcode_number"]
 
     def get_queryset(self):
-        return get_orders_for_user_queryset(self.request.user)
+        status_filter = None
+        if (
+            hasattr(self, "request")
+            and self.request
+            and hasattr(self.request, "query_params")
+        ):
+            status_filter = self.request.query_params.get(
+                "order_status"
+            ) or self.request.query_params.get("status")
+        user = (
+            getattr(self.request, "user", None)
+            if hasattr(self, "request") and self.request
+            else None
+        )
+        return get_orders_for_user_queryset(user, status_filter=status_filter)
 
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
@@ -88,7 +102,7 @@ class POSOrderListCreateAPIView(ListCreateAPIView):
     def get_queryset(self):
         queryset = (
             Order.objects
-            .filter(is_pos_order=True)
+            .filter(is_pos_order=True, only_save=False)
             .select_related(
                 "branch",
                 "user",
@@ -307,11 +321,12 @@ class OrderRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             "payment_type",
             "is_paid",
             "discount_type",
+            "only_save",
         ]
         for field in updatable_fields:
             if field in raw:
                 value = raw[field]
-                if field == "is_paid":
+                if field in ("is_paid", "only_save"):
                     # Accept boolean strings from JSON body
                     if isinstance(value, str):
                         value = value.lower() in ("true", "1", "yes")
@@ -396,7 +411,21 @@ class RecentOrdersAPIView(GenericAPIView):
     serializer_class = OrderResponseSerializer
 
     def get_queryset(self):
-        return get_orders_for_user_queryset(self.request.user)
+        status_filter = None
+        if (
+            hasattr(self, "request")
+            and self.request
+            and hasattr(self.request, "query_params")
+        ):
+            status_filter = self.request.query_params.get(
+                "order_status"
+            ) or self.request.query_params.get("status")
+        user = (
+            getattr(self.request, "user", None)
+            if hasattr(self, "request") and self.request
+            else None
+        )
+        return get_orders_for_user_queryset(user, status_filter=status_filter)
 
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -639,8 +668,11 @@ class OrderPhoneExportAPIView(GenericAPIView):
             return Order.objects.none()
 
         if user.is_superuser or getattr(user, "role", None) == "admin":
-            return Order.objects.exclude(phone_number__isnull=True).exclude(
-                phone_number=""
+            return (
+                Order.objects
+                .filter(only_save=False)
+                .exclude(phone_number__isnull=True)
+                .exclude(phone_number="")
             )
 
         return Order.objects.none()

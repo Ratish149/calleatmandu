@@ -88,7 +88,7 @@ class SalesStatsAPIView(GenericAPIView):
     filterset_class = SalesStatsFilter
 
     def get_queryset(self):
-        queryset = Order.objects.all()
+        queryset = Order.objects.filter(only_save=False)
         user = self.request.user
         if user and user.is_authenticated and getattr(user, "branch_id", None):
             queryset = queryset.filter(branch_id=user.branch_id)
@@ -161,7 +161,7 @@ class PeakOrderHoursAPIView(GenericAPIView):
     filterset_class = PeakHoursFilter
 
     def get_queryset(self):
-        queryset = Order.objects.all()
+        queryset = Order.objects.filter(only_save=False)
         user = self.request.user
         if user and user.is_authenticated and getattr(user, "branch_id", None):
             queryset = queryset.filter(branch_id=user.branch_id)
@@ -187,7 +187,7 @@ class OrderAnalyticsAPIView(GenericAPIView):
     serializer_class = OrderAnalyticsSerializer
 
     def get_queryset(self):
-        queryset = Order.objects.all()
+        queryset = Order.objects.filter(only_save=False)
         user = self.request.user
         if user and user.is_authenticated and getattr(user, "branch_id", None):
             queryset = queryset.filter(branch_id=user.branch_id)
@@ -219,7 +219,7 @@ class RevenueBreakdownAPIView(GenericAPIView):
     filterset_class = RevenueBreakdownFilter
 
     def get_queryset(self):
-        queryset = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
+        queryset = Order.objects.exclude(status=Order.OrderStatus.CANCELLED).filter(only_save=False)
         user = self.request.user
         if (
             user

@@ -122,6 +122,11 @@ class Order(BaseModel):
         blank=True,
         related_name="orders",
     )
+    only_save = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Marks this order as save only for branch.",
+    )
 
     # Payment Info
     payment_type = models.CharField(

@@ -84,13 +84,28 @@ class ProductImageAdmin(ModelAdmin):
 class KitchenInventoryLogInline(TabularInline):
     model = KitchenInventoryLog
     extra = 0
-    readonly_fields = ["consumed_quantity", "received_quantity", "net_change", "updated_by", "date", "notes"]
-    fields = ["date", "received_quantity", "consumed_quantity", "net_change", "updated_by", "notes"]
+    readonly_fields = [
+        "consumed_quantity",
+        "received_quantity",
+        "net_change",
+        "updated_by",
+        "date",
+        "notes",
+    ]
+    fields = [
+        "date",
+        "received_quantity",
+        "consumed_quantity",
+        "net_change",
+        "updated_by",
+        "notes",
+    ]
     ordering = ["-date"]
     can_delete = False
 
     def net_change(self, obj):
         return obj.net_change
+
     net_change.short_description = "Net Change"
 
 
@@ -108,7 +123,7 @@ class KitchenInventoryItemAdmin(ModelAdmin):
     list_filter = ["unit"]
     search_fields = ["name"]
     ordering = ["name"]
-    readonly_fields = ["total_quantity", "created_at", "updated_at"]
+    readonly_fields = ["created_at", "updated_at"]
     inlines = [KitchenInventoryLogInline]
 
     @admin.display(boolean=True, description="Below Benchmark?")

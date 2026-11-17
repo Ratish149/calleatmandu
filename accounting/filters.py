@@ -1,7 +1,7 @@
 import django_filters
 from django.db.models import Q
 
-from accounting.models import CashExpenditure, Vendor, VendorTransaction
+from accounting.models import CashExpenditure, CreditEntry, Vendor, VendorTransaction
 
 
 class CashExpenditureFilter(django_filters.FilterSet):
@@ -90,6 +90,7 @@ class VendorTransactionFilter(django_filters.FilterSet):
     - vendor: filter by vendor ID.
     - transaction_type: filter by BILL or PAYMENT.
     - payment_method: filter by payment method.
+    - receipt_type: filter by VAT or NON_VAT receipt.
     - start_date / end_date: filter by transaction date range.
     - branch: filter by branch ID.
     - search: search by title or notes.
@@ -106,6 +107,10 @@ class VendorTransactionFilter(django_filters.FilterSet):
     payment_method = django_filters.ChoiceFilter(
         choices=VendorTransaction.PaymentMethod.choices,
         help_text="Filter by payment method.",
+    )
+    receipt_type = django_filters.ChoiceFilter(
+        choices=VendorTransaction.ReceiptType.choices,
+        help_text="Filter by receipt type: VAT or NON_VAT.",
     )
     start_date = django_filters.DateFilter(
         field_name="date",
@@ -132,6 +137,7 @@ class VendorTransactionFilter(django_filters.FilterSet):
             "vendor",
             "transaction_type",
             "payment_method",
+            "receipt_type",
             "start_date",
             "end_date",
             "branch",
@@ -150,6 +156,7 @@ class VendorSummaryFilter(django_filters.FilterSet):
     FilterSet for Vendor Financial Summary:
     - vendor: filter summary by specific vendor ID.
     - branch: filter summary by branch ID.
+    - receipt_type: filter by VAT or NON_VAT receipt.
     - start_date / end_date: filter transactions by date range.
     - search: search by vendor name, phone number, title, or notes.
     """
@@ -161,6 +168,10 @@ class VendorSummaryFilter(django_filters.FilterSet):
     branch = django_filters.NumberFilter(
         field_name="branch_id",
         help_text="Filter summary by branch ID.",
+    )
+    receipt_type = django_filters.ChoiceFilter(
+        choices=VendorTransaction.ReceiptType.choices,
+        help_text="Filter by receipt type: VAT or NON_VAT.",
     )
     start_date = django_filters.DateFilter(
         field_name="date",
@@ -179,7 +190,7 @@ class VendorSummaryFilter(django_filters.FilterSet):
 
     class Meta:
         model = VendorTransaction
-        fields = ["vendor", "branch", "start_date", "end_date", "search"]
+        fields = ["vendor", "branch", "receipt_type", "start_date", "end_date", "search"]
 
     def filter_search(self, queryset, name, value):
         if not value:
@@ -191,3 +202,46 @@ class VendorSummaryFilter(django_filters.FilterSet):
             | Q(title__icontains=val)
             | Q(notes__icontains=val)
         )
+
+
+class CreditEntryFilter(django_filters.FilterSet):
+    """
+    FilterSet for CreditEntry records:
+    - status: filter by PENDING, PARTIAL, or SETTLED.
+    - branch: filter by branch ID.
+    - start_date / end_date: filter by the linked cash entry's date.
+    - search: search by notes.
+    """
+
+    status = django_filters.ChoiceFilter(
+        choices=CreditEntry.Status.choices,
+        help_text="Filter by credit status: PENDING, PARTIAL, or SETTLED.",
+    )
+    branch = django_filters.NumberFilter(
+        field_name="branch_id",
+        help_text="Filter credit entries by branch ID.",
+    )
+    start_date = django_filters.DateFilter(
+        field_name="cash_entry__date",
+        lookup_expr="gte",
+        help_text="Filter credit entries from this cash entry date (YYYY-MM-DD).",
+    )
+    end_date = django_filters.DateFilter(
+        field_name="cash_entry__date",
+        lookup_expr="lte",
+        help_text="Filter credit entries up to this cash entry date (YYYY-MM-DD).",
+    )
+    search = django_filters.CharFilter(
+        method="filter_search",
+        help_text="Search by notes.",
+    )
+
+    class Meta:
+        model = CreditEntry
+        fields = ["status", "branch", "start_date", "end_date", "search"]
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        val = str(value).strip()
+        return queryset.filter(Q(notes__icontains=val))

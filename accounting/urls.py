@@ -4,6 +4,10 @@ from accounting.views import (
     CashBalanceSummaryAPIView,
     CashExpenditureListCreateAPIView,
     CashExpenditureRetrieveUpdateDestroyAPIView,
+    CreditEntryListAPIView,
+    CreditEntryRetrieveUpdateDestroyAPIView,
+    CreditSettleAPIView,
+    CreditStatsAPIView,
     VendorListCreateAPIView,
     VendorRetrieveUpdateDestroyAPIView,
     VendorSummaryAPIView,
@@ -28,6 +32,27 @@ urlpatterns = [
         "accounting/balance/",
         CashBalanceSummaryAPIView.as_view(),
         name="accounting-balance-summary",
+    ),
+    # --- Credit Entries ---
+    path(
+        "accounting/credits/",
+        CreditEntryListAPIView.as_view(),
+        name="credit-entry-list-create",
+    ),
+    path(
+        "accounting/credits/<int:pk>/",
+        CreditEntryRetrieveUpdateDestroyAPIView.as_view(),
+        name="credit-entry-detail",
+    ),
+    path(
+        "accounting/credits/<int:pk>/settle/",
+        CreditSettleAPIView.as_view(),
+        name="credit-entry-settle",
+    ),
+    path(
+        "accounting/credit-stats/",
+        CreditStatsAPIView.as_view(),
+        name="credit-stats",
     ),
     # --- Vendors ---
     path(

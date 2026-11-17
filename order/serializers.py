@@ -212,6 +212,14 @@ class POSOrderCreateSerializer(serializers.Serializer):
     )
     discount_amount = serializers.FloatField(required=False, default=0.0, min_value=0.0)
     is_paid = serializers.BooleanField(required=False, default=False)
+    only_save = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text=(
+            "If true, the order is saved as a draft only and NOT confirmed. "
+            "Draft orders are excluded from all calculations and reports."
+        ),
+    )
     items = OrderItemCreateSerializer(many=True)
 
 
@@ -257,6 +265,7 @@ class OrderResponseSerializer(serializers.ModelSerializer):
             "nps_payment_status",
             "transaction_id",
             "is_paid",
+            "only_save",
             "status",
             "order_type",
             "is_pos_order",
@@ -354,6 +363,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "payment_type",
             "transaction_id",
             "is_paid",
+            "only_save",
             "is_pos_order",
             "order_type",
             "status",
@@ -593,4 +603,3 @@ class CustomerFlagSerializer(serializers.Serializer):
     delivered_orders = serializers.IntegerField()
     cancelled_orders = serializers.IntegerField()
     prepaid_orders_after_last_cancellation = serializers.IntegerField()
-
