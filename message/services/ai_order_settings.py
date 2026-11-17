@@ -1,9 +1,10 @@
 """Resolves the effective AI chat and order capabilities for a branch.
 
-Environment variables in ``settings`` act as the defaults; a nullable
-``BranchAISettings`` row (managed from the admin UI) overrides individual
-values per branch. Branches without a row keep the previous env-driven
-behaviour.
+Environment variables in ``settings`` act as the defaults for most flags; a
+nullable ``BranchAISettings`` row overrides individual values per branch.
+The reply delay is stored on that row (defaulting to
+``DEFAULT_REPLY_DELAY_SECONDS``) rather than in an environment variable, and
+branches without a row use the same constant.
 """
 
 import logging
@@ -13,6 +14,8 @@ from typing import Optional, Union
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_REPLY_DELAY_SECONDS = 120
 
 
 def resolve_conversation_branch_id(conversation) -> Optional[Union[int, str]]:
@@ -34,10 +37,10 @@ class OrderFeatureFlags:
     dedup_window_minutes: int
 
 
-def _env_defaults() -> OrderFeatureFlags:
+def _defaults() -> OrderFeatureFlags:
     return OrderFeatureFlags(
         chat_enabled=getattr(settings, "AI_REPLY_ENABLED", True),
-        reply_delay_seconds=int(getattr(settings, "AI_REPLY_DELAY_SECONDS", 120)),
+        reply_delay_seconds=DEFAULT_REPLY_DELAY_SECONDS,
         creation_enabled=getattr(settings, "AI_ORDER_CREATION_ENABLED", False),
         cancellation_enabled=getattr(settings, "AI_ORDER_CANCELLATION_ENABLED", False),
         cancellation_window_minutes=int(
@@ -54,12 +57,13 @@ def get_order_feature_flags(
 ) -> OrderFeatureFlags:
     """Return the effective AI chat and order flags for ``branch_id``.
 
-    Falls back to the environment defaults when no branch id is supplied or no
+    Falls back to the defaults when no branch id is supplied or no
     ``BranchAISettings`` row exists. Any ``None`` field on an existing row
-    inherits the corresponding env default. ``AI_REPLY_ENABLED`` remains a
-    global kill switch: a branch cannot force AI chat on when it is false.
+    inherits the corresponding env default; the reply delay is always stored
+    on the row and is never ``None``. ``AI_REPLY_ENABLED`` remains a global
+    kill switch: a branch cannot force AI chat on when it is false.
     """
-    defaults = _env_defaults()
+    defaults = _defaults()
     if branch_id is None:
         return defaults
 
@@ -80,9 +84,7 @@ def get_order_feature_flags(
     return OrderFeatureFlags(
         chat_enabled=defaults.chat_enabled
         and pick(branch_settings.ai_chat_enabled, True),
-        reply_delay_seconds=pick(
-            branch_settings.ai_reply_delay_seconds, defaults.reply_delay_seconds
-        ),
+        reply_delay_seconds=branch_settings.ai_reply_delay_seconds,
         creation_enabled=pick(
             branch_settings.ai_order_creation_enabled, defaults.creation_enabled
         ),

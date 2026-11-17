@@ -138,8 +138,9 @@ class ConversationSerializer(serializers.ModelSerializer):
 class ConversationOrderSettingsSerializer(serializers.Serializer):
     """Partial update for the per-branch AI chat and order capabilities.
 
-    Only the fields provided are applied. Sending ``null`` clears an override so
-    the branch falls back to the environment default.
+    Only the fields provided are applied. Sending ``null`` clears other
+    overrides so the branch inherits the environment default; ``null`` for
+    ``ai_reply_delay_seconds`` resets the branch delay to the default (120s).
     """
 
     ai_chat_enabled = serializers.BooleanField(required=False, allow_null=True)

@@ -24,6 +24,7 @@ from message.serializers import (
     SendMessageSerializer,
 )
 from message.services.ai_order_settings import (
+    DEFAULT_REPLY_DELAY_SECONDS,
     get_order_feature_flags,
     resolve_conversation_branch_id,
 )
@@ -226,7 +227,13 @@ class ConversationOrderSettingsAPIView(APIView):
         branch_settings, _ = BranchAISettings.objects.get_or_create(
             branch_id=target_branch_id
         )
-        for field, value in serializer.validated_data.items():
+        values = dict(serializer.validated_data)
+        if (
+            "ai_reply_delay_seconds" in values
+            and values["ai_reply_delay_seconds"] is None
+        ):
+            values["ai_reply_delay_seconds"] = DEFAULT_REPLY_DELAY_SECONDS
+        for field, value in values.items():
             setattr(branch_settings, field, value)
         branch_settings.save()
 

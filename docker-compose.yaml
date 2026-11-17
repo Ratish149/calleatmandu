@@ -25,9 +25,6 @@ services:
       # redis service above is used. Use a separate name so the local .env
       # REDIS_URL (localhost) does not leak into the containers.
       - REDIS_URL=${COMPOSE_REDIS_URL:-redis://redis:6379/0}
-    depends_on:
-      redis:
-        condition: service_healthy
     volumes:
       - calleatmandu_media_data:/app/media   # Persist media uploads
     networks:

@@ -117,10 +117,6 @@ AI_ORDER_CANCELLATION_ENABLED = (
 AI_ORDER_CANCELLATION_WINDOW_MINUTES = int(
     os.getenv("AI_ORDER_CANCELLATION_WINDOW_MINUTES", "10")
 )
-# Seconds the bot waits after an inbound message before answering on its own.
-# During this window a human operator can reply/take over, which cancels the
-# scheduled AI reply. Every new inbound message resets the timer.
-AI_REPLY_DELAY_SECONDS = int(os.getenv("AI_REPLY_DELAY_SECONDS", "120"))
 # A due reply is leased in the database while it is being generated. If the
 # worker crashes mid-reply, the lease expires and a later dispatcher run retries.
 AI_REPLY_DISPATCH_LEASE_SECONDS = int(

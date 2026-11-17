@@ -167,9 +167,11 @@ class Attachment(models.Model):
 class BranchAISettings(BaseModel):
     """Per-branch overrides for AI chat and order capabilities.
 
-    Each field is nullable; a ``None`` value means "inherit the environment
-    default" defined in ``settings``. A row is only created when a branch
-    explicitly overrides a value from the UI.
+    Except for ``ai_reply_delay_seconds``, each field is nullable; a ``None``
+    value means "inherit the environment default" defined in ``settings``.
+    The reply delay is stored as a non-null value defaulting to 120 seconds;
+    branches with no row use the same default. A row is only created when a
+    branch explicitly overrides a value from the UI.
     """
 
     branch = models.OneToOneField(
@@ -178,7 +180,7 @@ class BranchAISettings(BaseModel):
         related_name="ai_settings",
     )
     ai_chat_enabled = models.BooleanField(null=True, blank=True)
-    ai_reply_delay_seconds = models.PositiveIntegerField(null=True, blank=True)
+    ai_reply_delay_seconds = models.PositiveIntegerField(default=120)
     ai_order_creation_enabled = models.BooleanField(null=True, blank=True)
     ai_order_cancellation_enabled = models.BooleanField(null=True, blank=True)
     ai_order_cancellation_window_minutes = models.PositiveIntegerField(

@@ -19,7 +19,8 @@ the bot if the bot had not already sent.
 
 ### After
 Inbound messages persist a due time in the database
-(`Conversation.ai_reply_due_at`) equal to now + `AI_REPLY_DELAY_SECONDS`. A
+(`Conversation.ai_reply_due_at`) equal to now + the branch's reply delay
+(`BranchAISettings.ai_reply_delay_seconds`, default 120 seconds). A
 periodic Celery beat task (`message.dispatch_due_ai_replies`) claims due
 conversations with an atomic lease and generates the reply. While the delay runs, a
 human operator can reply or take over, and the pending reply is **ignored**. Each
@@ -46,7 +47,7 @@ Redis is still required for two things:
 ## 2. Behavior
 
 1. Customer sends a message → `Message` (INBOUND) saved → websocket broadcast →
-   `Conversation.ai_reply_due_at` set to now + `AI_REPLY_DELAY_SECONDS`.
+   `Conversation.ai_reply_due_at` set to now + the branch reply delay.
 2. During the delay:
    - **Human replies** (send message) → bot deactivated, pending reply cleared. ✔ cancelled
    - **Human clicks "takeover"** → bot deactivated, pending reply cleared. ✔ cancelled
@@ -94,8 +95,8 @@ Celery `acks_late`.
 |---|---|
 | `requirements.txt` | Added `celery==5.6.3`, `channels-redis==4.3.0`, `redis==6.4.0`. |
 | `calleatmandu/__init__.py` | Imports the Celery app so `celery -A calleatmandu` works. |
-| `calleatmandu/settings.py` | `AI_REPLY_DELAY_SECONDS`, `AI_REPLY_DISPATCH_LEASE_SECONDS`, `CELERY_BEAT_SCHEDULE`, `REDIS_URL`, `CELERY_*`; `CHANNEL_LAYERS` now `channels_redis` when `REDIS_URL` is set, else in-memory. |
-| `message/models.py` | `Conversation.ai_reply_task_id` / `ai_reply_due_at`; per-branch `BranchAISettings.ai_reply_delay_seconds`. |
+| `calleatmandu/settings.py` | `AI_REPLY_DISPATCH_LEASE_SECONDS`, `CELERY_BEAT_SCHEDULE`, `REDIS_URL`, `CELERY_*`; `CHANNEL_LAYERS` now `channels_redis` when `REDIS_URL` is set, else in-memory. |
+| `message/models.py` | `Conversation.ai_reply_task_id` / `ai_reply_due_at`; per-branch `BranchAISettings.ai_reply_delay_seconds` (non-null, default 120s). |
 | `message/services/ai_reply_service.py` | `maybe_schedule_reply` persists `ai_reply_due_at`; `dispatch_due_replies` claims and sends due replies; `deactivate`/`activate` clear pending state; `_generate_and_send` keeps task-id guards. |
 | `message/management/commands/resume_ai_replies.py` | Also clears `ai_reply_task_id` / `ai_reply_due_at`. |
 | `common/apps.py` | Enables SQLite **WAL** + busy timeout via `connection_created` signal. |
@@ -114,12 +115,14 @@ Key entry points:
 
 ## 4. Configuration
 
-All via environment variables (`.env` or the orchestrator's env). Defaults in
-`calleatmandu/settings.py`.
+Infrastructure flags via environment variables (`.env` or the orchestrator's
+env). Defaults in `calleatmandu/settings.py`. The AI reply delay is stored in
+the database instead: `BranchAISettings.ai_reply_delay_seconds` (non-null,
+default `120`) is set per branch, and branches without a settings row use the
+same `120`-second default.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_REPLY_DELAY_SECONDS` | `120` | Global default for seconds the bot waits before answering on its own. A branch can override it in `BranchAISettings.ai_reply_delay_seconds`. Set `0` to answer almost immediately. |
 | `REDIS_URL` | *(empty)* | Redis connection string used for **both** the Celery broker/result backend and the Channels layer. **Required in production.** |
 | `CELERY_BROKER_URL` | `REDIS_URL` or `memory://` | Override broker only if you want it separate from `REDIS_URL`. |
 | `CELERY_RESULT_BACKEND` | `REDIS_URL` or `cache+memory://` | Override result backend only if needed. |
@@ -127,19 +130,21 @@ All via environment variables (`.env` or the orchestrator's env). Defaults in
 | `AI_REPLY_DISPATCH_LEASE_SECONDS` | `300` | How long a dispatcher claim is reserved while generating. If the worker dies, the reply is retried after this lease expires. |
 | `CELERY_TASK_ALWAYS_EAGER` | `false` | When `true`, tasks run inline in the web process (no worker/beat, delay ignored). For tests/local only. |
 
-### Per-branch delay override
+### Per-branch delay
 
-A branch can override the global delay with the existing AI settings popover/API:
+The delay is configured per branch with the existing AI settings popover/API:
 
 ```http
 POST /api/conversations/<conversation_id>/ai/order-settings/
 {"ai_reply_delay_seconds": 30}
 ```
 
-- `null` clears the branch override and inherits `AI_REPLY_DELAY_SECONDS`.
+- New rows default to `120` seconds; set `0` for near-instant replies.
+- `null` resets the branch delay to `120`.
 - Conversation responses include the effective value as `ai_reply_delay_seconds`.
 - The value is read when an inbound message schedules a reply, so it applies to
   subsequent messages; already-pending replies keep their original due time.
+- Branches with no settings row (and conversations without a branch) use `120`.
 
 Channels decision:
 - `REDIS_URL` set → `channels_redis.core.RedisChannelLayer` (multi-process safe).
@@ -265,7 +270,7 @@ dispatcher interval is controlled by `AI_REPLY_DISPATCH_INTERVAL_SECONDS`
 ```
 CELERY_TASK_ALWAYS_EAGER=true
 ```
-Tasks run inline in the web process; `AI_REPLY_DELAY_SECONDS` is ignored and the
+Tasks run inline in the web process; the branch delay is ignored and the
 webhook blocks while the reply is generated. Do **not** use this in production.
 
 > Reminder: with no `REDIS_URL` and no eager mode, the broker is `memory://` and
@@ -307,8 +312,8 @@ Recommendations:
 1. Is `REDIS_URL` set and are **both** the worker and beat running? Check
    `docker compose logs worker beat`.
 2. Did a human reply/takeover within the window? That is expected cancellation.
-3. Is the delay unusually long? Check `AI_REPLY_DELAY_SECONDS` and the branch
-   override. Check the conversation's `ai_reply_due_at`.
+3. Is the delay unusually long? Check the branch's `ai_reply_delay_seconds`
+   (default `120`) and the conversation's `ai_reply_due_at`.
 4. Is the dispatcher running? Look for `dispatch_due_ai_replies` in the worker log.
 5. Is the conversation stuck with `ai_reply_pending=True`? First clear the stale
    queue:
@@ -368,10 +373,11 @@ python manage.py resume_ai_replies --include-active
 ```
 
 ### Tuning the delay
-- Lower `AI_REPLY_DELAY_SECONDS` (e.g. `30`) for faster automation.
-- Set `0` for near-instant replies while keeping the new architecture.
-- Use the AI settings popover/API to set a per-branch override without redeploying.
-- The value is read at scheduling time, so a restart/redeploy picks up global changes.
+- Use the AI settings popover/API to set a branch's delay (e.g. `30`) for faster
+  automation, or `0` for near-instant replies.
+- Branches without a settings row use the `120`-second default.
+- The value is read at scheduling time, so changes apply to subsequent messages
+  without a restart; already-pending replies keep their original due time.
 
 ---
 
@@ -400,13 +406,15 @@ Covered behaviors:
 ## 10. Rollback
 
 Quick, no code revert required:
-- To restore near-instant replies: set `AI_REPLY_DELAY_SECONDS=0`.
+- To restore near-instant replies: set the branch delay to `0` via the AI settings
+  popover/API (or Django admin).
 - To make replies inline again without a worker: set `CELERY_TASK_ALWAYS_EAGER=true`
   (note: blocks the web request during generation and ignores the delay).
 - To fully revert the feature, restore the previous `threading.Thread` based
   `maybe_schedule_reply` / `deactivate` / `activate` and remove the Redis/worker/beat
-  services. The additive migrations can stay (harmless nullable columns) or be rolled
-  back with `python manage.py migrate message 0007` (removes `ai_reply_due_at`).
+   services. Migrations can stay, or be rolled back with
+   `python manage.py migrate message 0007` (removes `ai_reply_due_at` and restores
+   the nullable delay column).
 
 ---
 

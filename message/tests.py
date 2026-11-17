@@ -388,9 +388,7 @@ class ScheduleReplyTest(MessagingTestCase):
     def test_pending_reply_is_rescheduled_on_new_inbound(self):
         conversation = self.make_conversation(pending=True, task_id="old-task")
         before = timezone.now()
-        with override_settings(AI_REPLY_DELAY_SECONDS=120), patch(
-            "message.tasks.revoke_task"
-        ) as mock_revoke:
+        with patch("message.tasks.revoke_task") as mock_revoke:
             scheduled = AIReplyService.maybe_schedule_reply(conversation)
         after = timezone.now()
 
@@ -419,8 +417,7 @@ class ScheduleReplyTest(MessagingTestCase):
     def test_happy_path_sets_pending_and_due_at(self):
         conversation = self.make_conversation()
         before = timezone.now()
-        with override_settings(AI_REPLY_DELAY_SECONDS=120):
-            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        scheduled = AIReplyService.maybe_schedule_reply(conversation)
         after = timezone.now()
 
         self.assertTrue(scheduled)
@@ -450,8 +447,7 @@ class ScheduleReplyTest(MessagingTestCase):
         )
 
         before = timezone.now()
-        with override_settings(AI_REPLY_DELAY_SECONDS=120):
-            scheduled = AIReplyService.maybe_schedule_reply(conversation)
+        scheduled = AIReplyService.maybe_schedule_reply(conversation)
         after = timezone.now()
 
         self.assertTrue(scheduled)
@@ -2049,10 +2045,9 @@ class OrderFeatureFlagsResolverTest(TestCase):
             phone="9800000000",
         )
 
-    def test_no_branch_uses_env_defaults(self):
+    def test_no_branch_uses_default_reply_delay(self):
         with override_settings(
             AI_REPLY_ENABLED=True,
-            AI_REPLY_DELAY_SECONDS=45,
             AI_ORDER_CREATION_ENABLED=True,
             AI_ORDER_CANCELLATION_ENABLED=False,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=15,
@@ -2060,13 +2055,13 @@ class OrderFeatureFlagsResolverTest(TestCase):
         ):
             flags = get_order_feature_flags(None)
         self.assertTrue(flags.chat_enabled)
-        self.assertEqual(flags.reply_delay_seconds, 45)
+        self.assertEqual(flags.reply_delay_seconds, 120)
         self.assertTrue(flags.creation_enabled)
         self.assertFalse(flags.cancellation_enabled)
         self.assertEqual(flags.cancellation_window_minutes, 15)
         self.assertEqual(flags.dedup_window_minutes, 5)
 
-    def test_branch_without_row_uses_env_defaults(self):
+    def test_branch_without_row_uses_default_reply_delay(self):
         with override_settings(
             AI_REPLY_ENABLED=False,
             AI_ORDER_CREATION_ENABLED=True,
@@ -2074,6 +2069,14 @@ class OrderFeatureFlagsResolverTest(TestCase):
             flags = get_order_feature_flags(self.branch.pk)
         self.assertFalse(flags.chat_enabled)
         self.assertTrue(flags.creation_enabled)
+        self.assertEqual(flags.reply_delay_seconds, 120)
+
+    def test_branch_row_defaults_reply_delay(self):
+        settings_row = BranchAISettings.objects.create(branch=self.branch)
+        self.assertEqual(settings_row.ai_reply_delay_seconds, 120)
+        self.assertEqual(
+            get_order_feature_flags(self.branch.pk).reply_delay_seconds, 120
+        )
 
     def test_branch_row_can_disable_chat(self):
         BranchAISettings.objects.create(branch=self.branch, ai_chat_enabled=False)
@@ -2093,7 +2096,7 @@ class OrderFeatureFlagsResolverTest(TestCase):
             flags = get_order_feature_flags(self.branch.pk)
         self.assertFalse(flags.chat_enabled)
 
-    def test_branch_row_overrides_env_defaults(self):
+    def test_branch_row_overrides_defaults(self):
         BranchAISettings.objects.create(
             branch=self.branch,
             ai_reply_delay_seconds=30,
@@ -2103,7 +2106,6 @@ class OrderFeatureFlagsResolverTest(TestCase):
             ai_order_dedup_window_minutes=2,
         )
         with override_settings(
-            AI_REPLY_DELAY_SECONDS=120,
             AI_ORDER_CREATION_ENABLED=False,
             AI_ORDER_CANCELLATION_ENABLED=False,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=10,
@@ -2118,10 +2120,11 @@ class OrderFeatureFlagsResolverTest(TestCase):
 
     def test_null_fields_inherit_env_defaults(self):
         BranchAISettings.objects.create(
-            branch=self.branch, ai_order_creation_enabled=True
+            branch=self.branch,
+            ai_reply_delay_seconds=90,
+            ai_order_creation_enabled=True,
         )
         with override_settings(
-            AI_REPLY_DELAY_SECONDS=90,
             AI_ORDER_CREATION_ENABLED=False,
             AI_ORDER_CANCELLATION_ENABLED=True,
             AI_ORDER_CANCELLATION_WINDOW_MINUTES=12,
@@ -2293,22 +2296,21 @@ class ConversationOrderSettingsAPITest(TestCase):
         self.assertTrue(settings_row.ai_order_creation_enabled)
         self.assertEqual(settings_row.ai_order_cancellation_window_minutes, 25)
 
-    def test_null_clears_reply_delay_override(self):
+    def test_null_resets_reply_delay_to_default(self):
         BranchAISettings.objects.create(
             branch=self.branch, ai_reply_delay_seconds=30
         )
         self._auth(self.admin)
-        with override_settings(AI_REPLY_DELAY_SECONDS=120):
-            response = self.client.post(
-                self._url(),
-                data=json.dumps({"ai_reply_delay_seconds": None}),
-                content_type="application/json",
-                **self.auth_headers,
-            )
+        response = self.client.post(
+            self._url(),
+            data=json.dumps({"ai_reply_delay_seconds": None}),
+            content_type="application/json",
+            **self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["ai_reply_delay_seconds"], 120)
         settings_row = BranchAISettings.objects.get(branch=self.branch)
-        self.assertIsNone(settings_row.ai_reply_delay_seconds)
+        self.assertEqual(settings_row.ai_reply_delay_seconds, 120)
 
     def test_negative_reply_delay_is_rejected(self):
         self._auth(self.admin)
