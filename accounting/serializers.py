@@ -1,8 +1,10 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from accounting.models import (
     CashExpenditure,
     CreditEntry,
+    CreditOwner,
     CreditSettlement,
     Vendor,
     VendorTransaction,
@@ -10,6 +12,7 @@ from accounting.models import (
 from accounting.services.accounting_service import (
     CashExpenditureService,
 )
+from accounting.services.credit_owner_service import CreditOwnerService
 from accounting.services.vendor_service import VendorService, VendorTransactionService
 
 
@@ -31,6 +34,23 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
     available_balance = serializers.FloatField(read_only=True)
     net_amount = serializers.FloatField(read_only=True)
     total_sales = serializers.FloatField(read_only=True)
+    credit_owner = serializers.PrimaryKeyRelatedField(
+        queryset=CreditOwner.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="Credit owner who owes this amount (required if credit_amount > 0).",
+    )
+    credit_owner_name = serializers.CharField(
+        read_only=True,
+        allow_null=True,
+        help_text="Name of the credit owner linked to this credit transaction.",
+    )
+    credit_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Remarks/notes for the linked credit entry.",
+    )
 
     class Meta:
         model = CashExpenditure
@@ -39,6 +59,9 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             "cash_amount",
             "online_amount",
             "credit_amount",
+            "credit_owner",
+            "credit_owner_name",
+            "credit_notes",
             "delivery_charge",
             "available_balance",
             "total_sales",
@@ -55,6 +78,7 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "credit_owner_name",
             "available_balance",
             "total_sales",
             "net_amount",
@@ -65,6 +89,12 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
+        if "credit_note" in data_copy and "credit_notes" not in data_copy:
+            data_copy["credit_notes"] = data_copy["credit_note"]
+        return super().to_internal_value(data_copy)
 
     def validate(self, attrs):
         cash_amount = float(
@@ -102,6 +132,15 @@ class CashExpenditureSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "delivery_charge": "Delivery charge cannot be negative."
             })
+
+        if credit_amount > 0:
+            existing_owner = getattr(
+                getattr(self.instance, "credit_entry", None), "credit_owner_id", None
+            )
+            if not attrs.get("credit_owner") and not existing_owner:
+                raise serializers.ValidationError({
+                    "credit_owner": "Credit owner is required when credit_amount is greater than zero."
+                })
 
         attrs["cash_amount"] = cash_amount
         attrs["online_amount"] = online_amount
@@ -527,13 +566,88 @@ class CreditSettlementSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class CreditOwnerSimpleSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for CreditOwner dropdowns and nested references."""
+
+    class Meta:
+        model = CreditOwner
+        fields = ["id", "name", "phone_number"]
+
+
+class CreditOwnerSerializer(serializers.ModelSerializer):
+    """
+    Serializer for CreditOwner CRUD and financial balance details.
+    Branch is auto-assigned from the logged-in user on create if omitted.
+    """
+
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    total_credit_amount = serializers.FloatField(read_only=True)
+    total_settled_amount = serializers.FloatField(read_only=True)
+    remaining_due = serializers.FloatField(read_only=True)
+    is_cleared = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = CreditOwner
+        fields = [
+            "id",
+            "name",
+            "phone_number",
+            "address",
+            "branch",
+            "branch_name",
+            "notes",
+            "total_credit_amount",
+            "total_settled_amount",
+            "remaining_due",
+            "is_cleared",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "branch_name",
+            "total_credit_amount",
+            "total_settled_amount",
+            "remaining_due",
+            "is_cleared",
+            "created_at",
+            "updated_at",
+        ]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        user = request.user if request and request.user.is_authenticated else None
+        return CreditOwnerService.create_credit_owner(validated_data, created_by=user)
+
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        user = request.user if request and request.user.is_authenticated else None
+        return CreditOwnerService.update_credit_owner(
+            instance, validated_data, updated_by=user
+        )
+
+
 class CreditEntrySerializer(serializers.ModelSerializer):
     """
-    Serializer for CreditEntry — a credit amount linked to a CashExpenditure entry.
+    Serializer for CreditEntry — a credit amount linked to a CreditOwner.
+    Optionally linked to a CashExpenditure entry.
     Includes nested settlement details (read-only) and computed balance fields.
     """
 
-    cash_entry_date = serializers.DateField(source="cash_entry.date", read_only=True)
+    cash_entry = serializers.PrimaryKeyRelatedField(
+        queryset=CashExpenditure.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="Optional linked cash flow entry.",
+    )
+    date = serializers.DateField(
+        required=False,
+        default=timezone.now,
+        help_text="Date of this credit transaction.",
+    )
+    cash_entry_date = serializers.DateField(
+        source="cash_entry.date", read_only=True, allow_null=True
+    )
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True
@@ -543,6 +657,15 @@ class CreditEntrySerializer(serializers.ModelSerializer):
     amount_remaining = serializers.FloatField(read_only=True)
     is_fully_settled = serializers.BooleanField(read_only=True)
     settlement = CreditSettlementSerializer(read_only=True)
+    credit_owner = serializers.PrimaryKeyRelatedField(
+        queryset=CreditOwner.objects.all(),
+        required=True,
+        help_text="Credit owner who owes this amount.",
+    )
+    credit_owner_details = CreditOwnerSimpleSerializer(
+        source="credit_owner", read_only=True
+    )
+    owner_name = serializers.CharField(read_only=True)
     credit_notes = serializers.CharField(
         source="notes",
         required=False,
@@ -555,8 +678,12 @@ class CreditEntrySerializer(serializers.ModelSerializer):
         model = CreditEntry
         fields = [
             "id",
+            "date",
             "cash_entry",
             "cash_entry_date",
+            "credit_owner",
+            "credit_owner_details",
+            "owner_name",
             "credit_amount",
             "status",
             "status_display",
@@ -575,6 +702,7 @@ class CreditEntrySerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "cash_entry_date",
+            "owner_name",
             "status",
             "status_display",
             "amount_settled",
@@ -594,14 +722,31 @@ class CreditEntrySerializer(serializers.ModelSerializer):
         user = request.user if request and request.user.is_authenticated else None
         branch = getattr(user, "branch", None) if user else None
 
+        cash_entry = validated_data.get("cash_entry")
+        entry_date = validated_data.get("date")
+        if not entry_date:
+            entry_date = cash_entry.date if cash_entry else timezone.now().date()
+
         credit_entry = CreditEntry.objects.create(
-            cash_entry=validated_data["cash_entry"],
+            cash_entry=cash_entry,
+            date=entry_date,
             credit_amount=validated_data["credit_amount"],
+            credit_owner=validated_data["credit_owner"],
             notes=validated_data.get("notes"),
             branch=branch,
             created_by=user,
         )
         return credit_entry
+
+    def update(self, instance, validated_data):
+        if instance.status == CreditEntry.Status.SETTLED:
+            raise serializers.ValidationError({
+                "non_field_errors": "Settled credit entries cannot be edited."
+            })
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
 
 class CreditSettleActionSerializer(serializers.Serializer):

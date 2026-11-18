@@ -6,6 +6,9 @@ from accounting.views import (
     CashExpenditureRetrieveUpdateDestroyAPIView,
     CreditEntryListAPIView,
     CreditEntryRetrieveUpdateDestroyAPIView,
+    CreditOwnerListCreateAPIView,
+    CreditOwnerRetrieveUpdateDestroyAPIView,
+    CreditOwnerSummaryAPIView,
     CreditSettleAPIView,
     CreditStatsAPIView,
     VendorListCreateAPIView,
@@ -53,6 +56,22 @@ urlpatterns = [
         "accounting/credit-stats/",
         CreditStatsAPIView.as_view(),
         name="credit-stats",
+    ),
+    # --- Credit Owners ---
+    path(
+        "accounting/credit-owners/",
+        CreditOwnerListCreateAPIView.as_view(),
+        name="credit-owner-list-create",
+    ),
+    path(
+        "accounting/credit-owners/<int:pk>/",
+        CreditOwnerRetrieveUpdateDestroyAPIView.as_view(),
+        name="credit-owner-detail",
+    ),
+    path(
+        "accounting/credit-owners/summary/",
+        CreditOwnerSummaryAPIView.as_view(),
+        name="credit-owner-summary",
     ),
     # --- Vendors ---
     path(

@@ -6,6 +6,7 @@ from unfold.admin import ModelAdmin, StackedInline, TabularInline
 from accounting.models import (
     CashExpenditure,
     CreditEntry,
+    CreditOwner,
     CreditSettlement,
     Vendor,
     VendorTransaction,
@@ -345,12 +346,124 @@ class CreditSettlementInline(StackedInline):
     )
 
 
-@admin.register(CreditEntry)
-class CreditEntryAdmin(ModelAdmin):
-    list_display = (
+class CreditEntryForOwnerInline(TabularInline):
+    model = CreditEntry
+    extra = 0
+    show_change_link = True
+    fields = (
         "cash_entry",
         "credit_amount",
         "status",
+        "amount_settled",
+        "amount_remaining",
+        "is_fully_settled",
+        "created_at",
+    )
+    readonly_fields = (
+        "amount_settled",
+        "amount_remaining",
+        "is_fully_settled",
+        "created_at",
+    )
+
+
+@admin.register(CreditOwner)
+class CreditOwnerAdmin(ModelAdmin):
+    list_display = (
+        "name",
+        "phone_number",
+        "branch",
+        "get_total_credit_amount",
+        "get_total_settled_amount",
+        "get_remaining_due",
+        "created_at",
+    )
+    list_filter = (
+        "branch",
+        "created_at",
+    )
+    search_fields = (
+        "name",
+        "phone_number",
+        "address",
+        "notes",
+    )
+    list_select_related = ("branch",)
+    autocomplete_fields = ("branch",)
+    ordering = ("name",)
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "total_credit_amount",
+        "total_settled_amount",
+        "remaining_due",
+        "is_cleared",
+    )
+    inlines = [CreditEntryForOwnerInline]
+
+    fieldsets = (
+        (
+            "Owner Information",
+            {
+                "fields": (
+                    "name",
+                    "phone_number",
+                    "address",
+                    "branch",
+                ),
+            },
+        ),
+        (
+            "Financial Overview",
+            {
+                "fields": (
+                    "total_credit_amount",
+                    "total_settled_amount",
+                    "remaining_due",
+                    "is_cleared",
+                ),
+            },
+        ),
+        (
+            "Notes & Remarks",
+            {
+                "fields": ("notes",),
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+            },
+        ),
+    )
+
+    @admin.display(description="Total Credit (Rs.)")
+    def get_total_credit_amount(self, obj):
+        return f"Rs. {obj.total_credit_amount:,.2f}"
+
+    @admin.display(description="Settled (Rs.)")
+    def get_total_settled_amount(self, obj):
+        return f"Rs. {obj.total_settled_amount:,.2f}"
+
+    @admin.display(description="Remaining Due (Rs.)")
+    def get_remaining_due(self, obj):
+        due = obj.remaining_due
+        return f"Rs. {due:,.2f}" if due > 0 else "Cleared"
+
+
+@admin.register(CreditEntry)
+class CreditEntryAdmin(ModelAdmin):
+    list_display = (
+        "date",
+        "credit_owner",
+        "get_owner_name",
+        "credit_amount",
+        "status",
+        "cash_entry",
         "get_amount_settled",
         "get_amount_remaining",
         "get_is_fully_settled",
@@ -360,11 +473,14 @@ class CreditEntryAdmin(ModelAdmin):
     )
     list_filter = (
         "status",
+        "date",
         "branch",
         "created_at",
     )
     search_fields = (
         "notes",
+        "credit_owner__name",
+        "credit_owner__phone_number",
         "created_by__username",
         "cash_entry__notes",
     )
@@ -373,19 +489,22 @@ class CreditEntryAdmin(ModelAdmin):
         "settlement",
         "branch",
         "created_by",
+        "credit_owner",
     )
     autocomplete_fields = (
         "cash_entry",
+        "credit_owner",
         "branch",
         "created_by",
     )
-    ordering = ("-created_at",)
+    ordering = ("-date", "-created_at")
     readonly_fields = (
         "created_at",
         "updated_at",
         "amount_settled",
         "amount_remaining",
         "is_fully_settled",
+        "get_owner_name",
     )
     inlines = [CreditSettlementInline]
 
@@ -394,9 +513,11 @@ class CreditEntryAdmin(ModelAdmin):
             "Credit Details",
             {
                 "fields": (
-                    "cash_entry",
+                    "date",
+                    "credit_owner",
                     "credit_amount",
                     "status",
+                    "cash_entry",
                     "branch",
                     "created_by",
                 ),
@@ -428,6 +549,10 @@ class CreditEntryAdmin(ModelAdmin):
             },
         ),
     )
+
+    @admin.display(description="Credit Owner")
+    def get_owner_name(self, obj):
+        return obj.owner_name
 
     @admin.display(description="Amount Settled")
     def get_amount_settled(self, obj):

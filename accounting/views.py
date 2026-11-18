@@ -11,13 +11,21 @@ from rest_framework.response import Response
 from accounting.filters import (
     CashExpenditureFilter,
     CreditEntryFilter,
+    CreditOwnerFilter,
     VendorFilter,
     VendorSummaryFilter,
     VendorTransactionFilter,
 )
-from accounting.models import CashExpenditure, CreditEntry, Vendor, VendorTransaction
+from accounting.models import (
+    CashExpenditure,
+    CreditEntry,
+    CreditOwner,
+    Vendor,
+    VendorTransaction,
+)
 from accounting.selectors import (
     get_cash_balance_summary,
+    get_credit_owner_summary_report,
     get_credit_stats,
     get_vendor_summary_report,
     get_vendor_transaction_summary,
@@ -26,6 +34,7 @@ from accounting.serializers import (
     CashBalanceSummarySerializer,
     CashExpenditureSerializer,
     CreditEntrySerializer,
+    CreditOwnerSerializer,
     CreditSettleActionSerializer,
     CreditStatsSerializer,
     VendorSerializer,
@@ -34,6 +43,7 @@ from accounting.serializers import (
     VendorTransactionSummarySerializer,
 )
 from accounting.services.accounting_service import CreditEntryService
+from accounting.services.credit_owner_service import CreditOwnerService
 from common.permissions import IsStaffOrOperationalRole
 from common.utils import CustomPagination
 
@@ -43,7 +53,8 @@ class CashExpenditureListCreateAPIView(ListCreateAPIView):
     API view to list cash & expenditure transactions or record a new entry:
     - GET: Returns paginated transactions with embedded balance summary
            (total_cash_amount, total_online_amount, total_delivery_charge, total_available_balance).
-    - POST: Adds a new record with cash_amount, online_amount, and delivery_charge.
+    - POST: Adds a new record with cash_amount, online_amount, credit_amount, and delivery_charge.
+            When credit_amount > 0, credit_owner is required and automatically creates a linked CreditEntry.
     """
 
     permission_classes = [IsStaffOrOperationalRole]
@@ -62,7 +73,9 @@ class CashExpenditureListCreateAPIView(ListCreateAPIView):
     ordering = ["-date", "-created_at"]
 
     def get_queryset(self):
-        queryset = CashExpenditure.objects.select_related("branch", "created_by").all()
+        queryset = CashExpenditure.objects.select_related(
+            "branch", "created_by", "credit_entry", "credit_entry__credit_owner"
+        ).all()
         user = self.request.user
         if (
             user
@@ -127,7 +140,9 @@ class CashExpenditureRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     serializer_class = CashExpenditureSerializer
 
     def get_queryset(self):
-        queryset = CashExpenditure.objects.select_related("branch", "created_by").all()
+        queryset = CashExpenditure.objects.select_related(
+            "branch", "created_by", "credit_entry", "credit_entry__credit_owner"
+        ).all()
         user = self.request.user
         if (
             user
@@ -435,16 +450,102 @@ class VendorSummaryAPIView(GenericAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class CreditOwnerListCreateAPIView(ListCreateAPIView):
+    """
+    API view to list credit owners or register a new credit owner:
+    - GET: Returns paginated credit owners with their credit totals and due amounts.
+    - POST: Registers a new credit owner. Branch is auto-assigned from user if omitted.
+    Filters: branch, search
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CreditOwnerSerializer
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = CreditOwnerFilter
+    search_fields = ["name", "phone_number", "address", "notes"]
+    ordering_fields = ["name", "created_at"]
+    ordering = ["name"]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = CreditOwner.objects.select_related("branch").all()
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+            and getattr(user, "branch_id", None)
+        ):
+            queryset = queryset.filter(branch_id=user.branch_id)
+        return queryset
+
+
+class CreditOwnerRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, update, or delete a credit owner.
+    Deletion is prevented if there is an outstanding balance.
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+    serializer_class = CreditOwnerSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = CreditOwner.objects.select_related("branch").all()
+        if (
+            user
+            and user.is_authenticated
+            and not user.is_superuser
+            and getattr(user, "role", None) != "admin"
+            and getattr(user, "branch_id", None)
+        ):
+            queryset = queryset.filter(branch_id=user.branch_id)
+        return queryset
+
+    def perform_destroy(self, instance):
+        CreditOwnerService.delete_credit_owner(instance)
+
+
+class CreditOwnerSummaryAPIView(GenericAPIView):
+    """
+    GET endpoint returning aggregate credit statistics for credit owners:
+    - total_credit_amount: Total credit given
+    - total_settled_amount: Total settled amount
+    - total_remaining_due: Outstanding credit balance
+    - active_owners_count: Number of active credit owners
+    """
+
+    permission_classes = [IsStaffOrOperationalRole]
+
+    def get(self, request, *args, **kwargs):
+        branch_id = request.query_params.get("branch")
+        owner_id = request.query_params.get("owner_id")
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+
+        summary = get_credit_owner_summary_report(
+            owner_id=int(owner_id) if owner_id and str(owner_id).isdigit() else None,
+            branch_id=int(branch_id)
+            if branch_id and str(branch_id).isdigit()
+            else None,
+            start_date=start_date,
+            end_date=end_date,
+            user=request.user,
+        )
+        return Response(summary, status=status.HTTP_200_OK)
+
+
 class CreditEntryListAPIView(ListCreateAPIView):
     """
     API view to list all credit entries or create a standalone credit entry:
     - GET: Returns paginated credit entries with status, amounts, and settlement info.
-           Supports filtering by status, branch, date range, and search.
+           Supports filtering by status, branch, date range, credit owner, and search.
     - POST: Manually create a credit entry linked to an existing cash entry.
             (In normal flow, credit entries are auto-created from CashExpenditure
             when credit_amount > 0.)
 
-    Filters: status, branch, start_date, end_date, search
+    Filters: status, branch, credit_owner, start_date, end_date, search
     """
 
     permission_classes = [IsStaffOrOperationalRole]
@@ -452,14 +553,24 @@ class CreditEntryListAPIView(ListCreateAPIView):
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = CreditEntryFilter
-    search_fields = ["notes"]
-    ordering_fields = ["cash_entry__date", "credit_amount", "status", "created_at"]
-    ordering = ["-created_at"]
+    search_fields = [
+        "notes",
+        "credit_owner__name",
+        "credit_owner__phone_number",
+    ]
+    ordering_fields = [
+        "date",
+        "cash_entry__date",
+        "credit_amount",
+        "status",
+        "created_at",
+    ]
+    ordering = ["-date", "-created_at"]
 
     def get_queryset(self):
         user = self.request.user
         queryset = CreditEntry.objects.select_related(
-            "cash_entry", "branch", "created_by", "settlement"
+            "cash_entry", "branch", "created_by", "settlement", "credit_owner"
         ).all()
         if (
             user
@@ -484,7 +595,7 @@ class CreditEntryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         queryset = CreditEntry.objects.select_related(
-            "cash_entry", "branch", "created_by", "settlement"
+            "cash_entry", "branch", "created_by", "settlement", "credit_owner"
         ).all()
         if (
             user

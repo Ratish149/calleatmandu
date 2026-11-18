@@ -1,7 +1,13 @@
 import django_filters
 from django.db.models import Q
 
-from accounting.models import CashExpenditure, CreditEntry, Vendor, VendorTransaction
+from accounting.models import (
+    CashExpenditure,
+    CreditEntry,
+    CreditOwner,
+    Vendor,
+    VendorTransaction,
+)
 
 
 class CashExpenditureFilter(django_filters.FilterSet):
@@ -31,9 +37,13 @@ class CashExpenditureFilter(django_filters.FilterSet):
         field_name="created_by_id",
         help_text="Filter transactions by the user who created the record.",
     )
+    credit_owner = django_filters.NumberFilter(
+        field_name="credit_entry__credit_owner_id",
+        help_text="Filter transactions by credit owner ID.",
+    )
     search = django_filters.CharFilter(
         method="filter_search",
-        help_text="Search in title, notes, and staff username.",
+        help_text="Search in notes, credit owner name, and staff username.",
     )
 
     class Meta:
@@ -43,6 +53,7 @@ class CashExpenditureFilter(django_filters.FilterSet):
             "end_date",
             "branch",
             "created_by",
+            "credit_owner",
             "search",
         ]
 
@@ -51,9 +62,9 @@ class CashExpenditureFilter(django_filters.FilterSet):
             return queryset
         val = str(value).strip()
         return queryset.filter(
-            Q(title__icontains=val)
-            | Q(notes__icontains=val)
+            Q(notes__icontains=val)
             | Q(created_by__username__icontains=val)
+            | Q(credit_entry__credit_owner__name__icontains=val)
         )
 
 
@@ -190,7 +201,14 @@ class VendorSummaryFilter(django_filters.FilterSet):
 
     class Meta:
         model = VendorTransaction
-        fields = ["vendor", "branch", "receipt_type", "start_date", "end_date", "search"]
+        fields = [
+            "vendor",
+            "branch",
+            "receipt_type",
+            "start_date",
+            "end_date",
+            "search",
+        ]
 
     def filter_search(self, queryset, name, value):
         if not value:
@@ -204,44 +222,100 @@ class VendorSummaryFilter(django_filters.FilterSet):
         )
 
 
-class CreditEntryFilter(django_filters.FilterSet):
+class CreditOwnerFilter(django_filters.FilterSet):
     """
-    FilterSet for CreditEntry records:
-    - status: filter by PENDING, PARTIAL, or SETTLED.
+    FilterSet for CreditOwner records:
     - branch: filter by branch ID.
-    - start_date / end_date: filter by the linked cash entry's date.
-    - search: search by notes.
+    - search: search by name, phone_number, address, notes.
     """
 
-    status = django_filters.ChoiceFilter(
-        choices=CreditEntry.Status.choices,
-        help_text="Filter by credit status: PENDING, PARTIAL, or SETTLED.",
-    )
     branch = django_filters.NumberFilter(
         field_name="branch_id",
-        help_text="Filter credit entries by branch ID.",
-    )
-    start_date = django_filters.DateFilter(
-        field_name="cash_entry__date",
-        lookup_expr="gte",
-        help_text="Filter credit entries from this cash entry date (YYYY-MM-DD).",
-    )
-    end_date = django_filters.DateFilter(
-        field_name="cash_entry__date",
-        lookup_expr="lte",
-        help_text="Filter credit entries up to this cash entry date (YYYY-MM-DD).",
+        help_text="Filter credit owners by branch ID.",
     )
     search = django_filters.CharFilter(
         method="filter_search",
-        help_text="Search by notes.",
+        help_text="Search by name, phone number, address, or notes.",
     )
 
     class Meta:
-        model = CreditEntry
-        fields = ["status", "branch", "start_date", "end_date", "search"]
+        model = CreditOwner
+        fields = ["branch", "search"]
 
     def filter_search(self, queryset, name, value):
         if not value:
             return queryset
         val = str(value).strip()
-        return queryset.filter(Q(notes__icontains=val))
+        return queryset.filter(
+            Q(name__icontains=val)
+            | Q(phone_number__icontains=val)
+            | Q(address__icontains=val)
+            | Q(notes__icontains=val)
+        )
+
+
+class CreditEntryFilter(django_filters.FilterSet):
+    """
+    FilterSet for CreditEntry records:
+    - status: filter by PENDING or SETTLED.
+    - branch: filter by branch ID.
+    - credit_owner: filter by CreditOwner ID.
+    - start_date / end_date: filter by the linked cash entry's date.
+    - search: search by credit owner name, phone, or notes.
+    """
+
+    status = django_filters.ChoiceFilter(
+        choices=CreditEntry.Status.choices,
+        help_text="Filter by credit status: PENDING or SETTLED.",
+    )
+    branch = django_filters.NumberFilter(
+        field_name="branch_id",
+        help_text="Filter credit entries by branch ID.",
+    )
+    credit_owner = django_filters.NumberFilter(
+        field_name="credit_owner_id",
+        help_text="Filter credit entries by Credit Owner ID.",
+    )
+    start_date = django_filters.DateFilter(
+        method="filter_start_date",
+        help_text="Filter credit entries from this date (YYYY-MM-DD).",
+    )
+    end_date = django_filters.DateFilter(
+        method="filter_end_date",
+        help_text="Filter credit entries up to this date (YYYY-MM-DD).",
+    )
+    search = django_filters.CharFilter(
+        method="filter_search",
+        help_text="Search by credit owner name, phone, or notes.",
+    )
+
+    class Meta:
+        model = CreditEntry
+        fields = [
+            "status",
+            "branch",
+            "credit_owner",
+            "start_date",
+            "end_date",
+            "search",
+        ]
+
+    def filter_start_date(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(Q(date__gte=value) | Q(cash_entry__date__gte=value))
+
+    def filter_end_date(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(Q(date__lte=value) | Q(cash_entry__date__lte=value))
+
+    def filter_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        val = str(value).strip()
+        return queryset.filter(
+            Q(notes__icontains=val)
+            | Q(credit_owner__name__icontains=val)
+            | Q(credit_owner__phone_number__icontains=val)
+        )

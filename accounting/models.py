@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils import timezone
 
@@ -315,6 +316,115 @@ class CashExpenditure(BaseModel):
         """Alias for available_balance."""
         return self.available_balance
 
+    @property
+    def credit_owner(self):
+        """Returns the linked CreditOwner if a credit entry exists."""
+        try:
+            return self.credit_entry.credit_owner
+        except (AttributeError, ObjectDoesNotExist):
+            return None
+
+    @property
+    def credit_owner_name(self):
+        """Returns the credit owner name if a linked credit entry exists."""
+        try:
+            owner = self.credit_entry.credit_owner
+            return owner.name if owner else None
+        except (AttributeError, ObjectDoesNotExist):
+            return None
+
+    @property
+    def credit_notes(self):
+        """Returns notes from the linked credit entry if present."""
+        try:
+            return self.credit_entry.notes
+        except (AttributeError, ObjectDoesNotExist):
+            return None
+
+
+class CreditOwner(BaseModel):
+    """
+    Represents a customer, client, staff member, or entity who receives food/goods on credit.
+    Enables tracking of aggregate credit amounts, settlements, and outstanding credit balances
+    across all individual CreditEntry records for this owner.
+    """
+
+    name = models.CharField(
+        max_length=200,
+        db_index=True,
+        help_text="Full name of the person or entity given credit.",
+    )
+    phone_number = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Primary contact phone number of the credit owner.",
+    )
+    address = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Address or organization details of the credit owner.",
+    )
+    branch = models.ForeignKey(
+        "user_account.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credit_owners",
+        db_index=True,
+        help_text="Branch this credit owner is registered under.",
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Additional remarks or notes about this credit owner.",
+    )
+
+    class Meta:
+        db_table = "accounting_credit_owner"
+        ordering = ["name"]
+        verbose_name = "Credit Owner"
+        verbose_name_plural = "Credit Owners"
+        indexes = [
+            models.Index(fields=["branch", "name"]),
+            models.Index(fields=["branch", "phone_number"]),
+        ]
+
+    def __str__(self):
+        phone_part = f" ({self.phone_number})" if self.phone_number else ""
+        return f"{self.name}{phone_part}"
+
+    @property
+    def total_credit_amount(self) -> float:
+        """Total credit given to this credit owner across all entries."""
+        result = self.credit_entries.aggregate(total=models.Sum("credit_amount"))
+        return round(result["total"] or 0.0, 2)
+
+    @property
+    def total_settled_amount(self) -> float:
+        """Total amount paid back / settled by this credit owner."""
+        result = self.credit_entries.filter(settlement__isnull=False).aggregate(
+            total=models.Sum(
+                models.ExpressionWrapper(
+                    models.F("settlement__cash_settled")
+                    + models.F("settlement__online_settled"),
+                    output_field=models.FloatField(),
+                )
+            )
+        )
+        return round(result["total"] or 0.0, 2)
+
+    @property
+    def remaining_due(self) -> float:
+        """Outstanding credit balance owed by this owner."""
+        return round(self.total_credit_amount - self.total_settled_amount, 2)
+
+    @property
+    def is_cleared(self) -> bool:
+        """True if all credit has been fully settled."""
+        return self.remaining_due <= 0.0
+
 
 class CreditEntry(BaseModel):
     """
@@ -335,10 +445,26 @@ class CreditEntry(BaseModel):
 
     cash_entry = models.OneToOneField(
         CashExpenditure,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="credit_entry",
         db_index=True,
-        help_text="The cash entry this credit is associated with.",
+        help_text="The cash entry this credit is associated with (optional).",
+    )
+    date = models.DateField(
+        default=timezone.now,
+        db_index=True,
+        help_text="Date when this credit was issued.",
+    )
+    credit_owner = models.ForeignKey(
+        CreditOwner,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="credit_entries",
+        db_index=True,
+        help_text="The customer, person, or entity who owes this credit amount.",
     )
     credit_amount = models.FloatField(
         help_text="Total credit amount given (amount yet to be collected).",
@@ -376,19 +502,27 @@ class CreditEntry(BaseModel):
 
     class Meta:
         db_table = "accounting_credit_entry"
-        ordering = ["-created_at"]
+        ordering = ["-date", "-created_at"]
         verbose_name = "Credit Entry"
         verbose_name_plural = "Credit Entries"
         indexes = [
             models.Index(fields=["branch", "status"]),
-            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["status", "-date"]),
+            models.Index(fields=["credit_owner", "status"]),
+            models.Index(fields=["date", "-created_at"]),
         ]
 
     def __str__(self):
+        owner_name = self.owner_name
         return (
-            f"Credit Rs. {self.credit_amount} on {self.cash_entry.date} "
+            f"Credit Rs. {self.credit_amount} for {owner_name} on {self.date} "
             f"[{self.get_status_display()}]"
         )
+
+    @property
+    def owner_name(self) -> str:
+        """Returns the credit owner name."""
+        return self.credit_owner.name if self.credit_owner else "Unassigned"
 
     @property
     def amount_settled(self) -> float:

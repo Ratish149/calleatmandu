@@ -193,18 +193,22 @@ def get_credit_stats(
       pending_count         = number of PENDING credit entries
       total_entries         = total credit entries in period
     """
-    queryset = CreditEntry.objects.filter(
-        cash_entry__isnull=False,
-    ).select_related("cash_entry", "settlement")
+    queryset = CreditEntry.objects.select_related(
+        "cash_entry", "settlement", "credit_owner"
+    )
 
     if branch_id:
         queryset = queryset.filter(branch_id=branch_id)
 
     if start_date:
-        queryset = queryset.filter(cash_entry__date__gte=start_date)
+        queryset = queryset.filter(
+            Q(date__gte=start_date) | Q(cash_entry__date__gte=start_date)
+        )
 
     if end_date:
-        queryset = queryset.filter(cash_entry__date__lte=end_date)
+        queryset = queryset.filter(
+            Q(date__lte=end_date) | Q(cash_entry__date__lte=end_date)
+        )
 
     entry_agg = queryset.aggregate(
         total_credit_amount=Coalesce(Sum("credit_amount"), 0.0),

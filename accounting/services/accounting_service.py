@@ -1,8 +1,13 @@
 from typing import Any, Dict, Optional
 
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from accounting.models import CashExpenditure, CreditEntry, CreditSettlement
+from accounting.models import (
+    CashExpenditure,
+    CreditEntry,
+    CreditSettlement,
+)
 from order.models import ActivityLog
 from order.services.activity_log_service import ActivityLogService
 
@@ -55,12 +60,14 @@ class CashExpenditureService:
         if created_by and hasattr(created_by, "branch") and created_by.branch:
             branch = created_by.branch
 
+        entry_date = data.get("date") or timezone.now().date()
+
         entry = CashExpenditure.objects.create(
             cash_amount=cash_amount,
             online_amount=online_amount,
             credit_amount=credit_amount,
             delivery_charge=delivery_charge,
-            date=data.get("date"),
+            date=entry_date,
             notes=data.get("notes"),
             receipt_image=data.get("receipt_image"),
             branch=branch,
@@ -69,10 +76,17 @@ class CashExpenditureService:
 
         # Auto-create CreditEntry when credit_amount > 0
         if credit_amount > 0:
+            credit_note_val = (
+                data.get("credit_notes")
+                or data.get("credit_note")
+                or entry.notes
+            )
             CreditEntry.objects.create(
                 cash_entry=entry,
+                date=entry.date or entry_date,
                 credit_amount=credit_amount,
-                notes=data.get("credit_notes"),
+                credit_owner=data.get("credit_owner"),
+                notes=credit_note_val,
                 branch=branch,
                 created_by=created_by,
             )
@@ -168,8 +182,16 @@ class CashExpenditureService:
         instance.delivery_charge = delivery_charge
         instance.save()
 
-        # Sync credit_amount change to linked CreditEntry if still editable
-        if "credit_amount" in data:
+        # Sync credit fields change to linked CreditEntry if still editable
+        credit_note_val = (
+            data.get("credit_notes")
+            if "credit_notes" in data
+            else data.get("credit_note")
+        )
+        if any(
+            f in data
+            for f in ["credit_amount", "credit_owner", "credit_notes", "credit_note", "date"]
+        ):
             try:
                 credit_entry = instance.credit_entry
                 if credit_entry.status == CreditEntry.Status.PENDING and not hasattr(
@@ -177,7 +199,17 @@ class CashExpenditureService:
                 ):
                     if credit_amount > 0:
                         credit_entry.credit_amount = credit_amount
-                        credit_entry.save(update_fields=["credit_amount", "updated_at"])
+                        update_fields = ["credit_amount", "updated_at"]
+                        if "credit_owner" in data:
+                            credit_entry.credit_owner = data.get("credit_owner")
+                            update_fields.append("credit_owner")
+                        if credit_note_val is not None:
+                            credit_entry.notes = credit_note_val
+                            update_fields.append("notes")
+                        if "date" in data:
+                            credit_entry.date = instance.date
+                            update_fields.append("date")
+                        credit_entry.save(update_fields=update_fields)
                     else:
                         # credit removed — delete the pending entry
                         credit_entry.delete()
@@ -187,7 +219,14 @@ class CashExpenditureService:
                     branch = instance.branch
                     CreditEntry.objects.create(
                         cash_entry=instance,
+                        date=instance.date,
                         credit_amount=credit_amount,
+                        credit_owner=data.get("credit_owner"),
+                        notes=(
+                            credit_note_val
+                            if credit_note_val is not None
+                            else instance.notes
+                        ),
                         branch=branch,
                         created_by=updated_by,
                     )
