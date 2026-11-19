@@ -72,10 +72,27 @@ INSTALLED_APPS = [
     "delivery",
     "customer",
     "accounting",
+    "sms_management.apps.SmsManagementConfig",
 ]
 
 ZERNIO_KEY = os.getenv("ZERNIO_KEY", "")
 APP_URL = os.getenv("APP_URL", "")
+
+# NestSMS (sms_management)
+NESTSMS_API_KEY = os.getenv("NESTSMS_API_KEY", "")
+NESTSMS_BASE_URL = os.getenv(
+    "NESTSMS_BASE_URL", "https://auth.nestsms.com/api/v1/sms"
+).rstrip("/")
+NESTSMS_SENDER_ID = os.getenv("NESTSMS_SENDER_ID", "")
+NESTSMS_TIMEOUT_SECONDS = int(os.getenv("NESTSMS_TIMEOUT_SECONDS", "30"))
+POST_DELIVERY_SMS_DELAY_MINUTES = int(
+    os.getenv("POST_DELIVERY_SMS_DELAY_MINUTES", "30")
+)
+POST_DELIVERY_SMS_TEMPLATE = os.getenv(
+    "POST_DELIVERY_SMS_TEMPLATE",
+    "Dear {customer_name}, how was your CallEatMandu order #{order_number}? "
+    "We hope you enjoyed your meal. Thank you!",
+)
 
 """ DATABASES = {
     "default": {
@@ -103,7 +120,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://filme-town-nelson-serves.trycloudflare.com",
+    "https://beth-married-junction-jane.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 CSRF_TRUSTED_ORIGINS = [
@@ -111,7 +128,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.decmcluster.org",
     "https://www.api.decmcluster.org",
     "http://192.168.1.96:3000",
-    "https://filme-town-nelson-serves.trycloudflare.com",
+    "https://beth-married-junction-jane.trycloudflare.com",
     "https://calleatmanduapi.baliyotech.com",
 ]
 
@@ -242,3 +259,16 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
+
+# Celery / Redis (delayed post-delivery SMS)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+# No result backend needed for fire-and-forget SMS tasks
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND") or None
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_IGNORE_RESULT = True

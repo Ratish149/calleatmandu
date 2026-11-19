@@ -1,12 +1,40 @@
 version: "3.9"
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: calleatmandu_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - coolify
+
   web:
     build: .
     container_name: calleatmandu_web
     command: sh -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 calleatmandu.asgi:application"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - redis
     volumes:
       - calleatmandu_media_data:/app/media   # Persist media uploads
+    networks:
+      - coolify
+
+  celery_worker:
+    build: .
+    container_name: calleatmandu_celery
+    command: celery -A calleatmandu worker -l info --pool=solo
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - calleatmandu_media_data:/app/media
     networks:
       - coolify
 
